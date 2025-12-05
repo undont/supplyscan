@@ -9,7 +9,7 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
-// ErrUnknownFormat indicates an unrecognised lockfile format.
+// ErrUnknownFormat indicates an unrecognized lockfile format.
 var ErrUnknownFormat = errors.New("unknown lockfile format")
 
 // Lockfile represents a parsed lockfile.
@@ -46,14 +46,6 @@ func DetectAndParse(path string) (Lockfile, error) {
 // If recursive is true, it searches subdirectories as well.
 func FindLockfiles(dir string, recursive bool) ([]string, error) {
 	var lockfiles []string
-	lockfileNames := map[string]bool{
-		"package-lock.json":   true,
-		"npm-shrinkwrap.json": true,
-		"yarn.lock":           true,
-		"pnpm-lock.yaml":      true,
-		"bun.lock":            true,
-		"deno.lock":           true,
-	}
 
 	walkFn := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -63,7 +55,7 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 		// Skip node_modules and hidden directories
 		if info.IsDir() {
 			name := info.Name()
-			if name == "node_modules" || (len(name) > 0 && name[0] == '.') {
+			if name == "node_modules" || (name != "" && name[0] == '.') {
 				return filepath.SkipDir
 			}
 			// If not recursive and not the root dir, skip subdirectories
@@ -73,7 +65,7 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 			return nil
 		}
 
-		if lockfileNames[info.Name()] {
+		if IsLockfile(info.Name()) {
 			lockfiles = append(lockfiles, path)
 		}
 		return nil
@@ -86,7 +78,7 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 	return lockfiles, nil
 }
 
-// IsLockfile checks if a filename is a recognised lockfile.
+// IsLockfile checks if a filename is a recognized lockfile.
 func IsLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",

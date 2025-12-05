@@ -16,7 +16,7 @@ func main() {
 
 	scan, err := scanner.New()
 	if err != nil {
-		log.Fatalf("Failed to initialise scanner: %v", err)
+		log.Fatalf("Failed to initialize scanner: %v", err)
 	}
 
 	if *cliMode {

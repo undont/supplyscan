@@ -27,7 +27,7 @@ func New() (*Scanner, error) {
 	}, nil
 }
 
-// ScanOptions configures the scan behaviour.
+// ScanOptions configures the scan behavior.
 type ScanOptions struct {
 	Path       string
 	Recursive  bool
@@ -36,10 +36,8 @@ type ScanOptions struct {
 
 // Scan performs a full security scan on a project.
 func (s *Scanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
-	// Ensure IOC database is loaded
-	if err := s.detector.EnsureLoaded(); err != nil {
-		// Continue without IOC data if it fails
-	}
+	// Ensure IOC database is loaded (continue without it if unavailable)
+	_ = s.detector.EnsureLoaded()
 
 	// Find lockfiles
 	lockfilePaths, err := lockfile.FindLockfiles(opts.Path, opts.Recursive)
@@ -113,9 +111,8 @@ func (s *Scanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 
 // CheckPackage checks a single package for issues.
 func (s *Scanner) CheckPackage(name, version string) (*types.CheckResult, error) {
-	if err := s.detector.EnsureLoaded(); err != nil {
-		// Continue without IOC data
-	}
+	// Ensure IOC database is loaded (continue without it if unavailable)
+	_ = s.detector.EnsureLoaded()
 
 	result := &types.CheckResult{
 		SupplyChain: types.CheckSupplyChainResult{

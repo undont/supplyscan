@@ -4,8 +4,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
 // pnpmLockfile represents a parsed pnpm-lock.yaml file.
@@ -28,18 +29,18 @@ func (l *pnpmLockfile) Dependencies() []types.Dependency {
 
 // pnpmLockfileYAML represents the structure of pnpm-lock.yaml.
 type pnpmLockfileYAML struct {
-	LockfileVersion any                       `yaml:"lockfileVersion"`
-	Packages        map[string]pnpmPackage    `yaml:"packages"`
+	LockfileVersion any                    `yaml:"lockfileVersion"`
+	Packages        map[string]pnpmPackage `yaml:"packages"`
 	// v6+ format
-	Snapshots       map[string]pnpmSnapshot   `yaml:"snapshots"`
+	Snapshots map[string]pnpmSnapshot `yaml:"snapshots"`
 }
 
 type pnpmPackage struct {
-	Resolution  pnpmResolution `yaml:"resolution"`
-	Dev         bool           `yaml:"dev"`
-	Optional    bool           `yaml:"optional"`
+	Resolution pnpmResolution `yaml:"resolution"`
+	Dev        bool           `yaml:"dev"`
+	Optional   bool           `yaml:"optional"`
 	// v6+ format includes version directly
-	Version     string         `yaml:"version"`
+	Version string `yaml:"version"`
 }
 
 type pnpmSnapshot struct {
@@ -97,57 +98,61 @@ func ParsePNPM(path string) (Lockfile, error) {
 //   - v5: "/lodash/4.17.21"
 //   - v6+: "/lodash@4.17.21" or "lodash@4.17.21"
 //   - Scoped: "/@babel/core@7.23.0" or "/@babel/core/7.23.0"
-func parsePnpmPackageKey(key string, explicitVersion string) (name, version string) {
-	// Remove leading slash if present
+func parsePnpmPackageKey(key, explicitVersion string) (name, version string) {
 	key = strings.TrimPrefix(key, "/")
 
-	// If explicit version is provided (v6+ format), use it
 	if explicitVersion != "" {
-		// Extract name from key (before @version or /version)
-		if atIdx := strings.LastIndex(key, "@"); atIdx > 0 {
-			// Handle scoped packages: @scope/pkg@version
-			if strings.HasPrefix(key, "@") {
-				// Find second @ (version separator)
-				rest := key[1:]
-				if innerAt := strings.Index(rest, "@"); innerAt != -1 {
-					name = key[:innerAt+1]
-				}
-			} else {
-				name = key[:atIdx]
-			}
-		}
-		return name, explicitVersion
+		return extractPnpmName(key), explicitVersion
 	}
 
-	// v5 format: /package/version or /@scope/package/version
+	name, version = parsePnpmV5Key(key)
+	return name, stripPeerDeps(version)
+}
+
+// extractPnpmName extracts the package name from a pnpm key (v6+ format with explicit version).
+func extractPnpmName(key string) string {
+	atIdx := strings.LastIndex(key, "@")
+	if atIdx <= 0 {
+		return ""
+	}
+
+	// Scoped package: @scope/pkg@version - find second @
 	if strings.HasPrefix(key, "@") {
-		// Scoped package: @scope/package/version
-		parts := strings.Split(key, "/")
-		if len(parts) >= 3 {
-			name = parts[0] + "/" + parts[1]
-			version = parts[2]
-			// Handle additional path segments (peer deps)
-			if underscoreIdx := strings.Index(version, "_"); underscoreIdx != -1 {
-				version = version[:underscoreIdx]
-			}
+		if innerAt := strings.Index(key[1:], "@"); innerAt != -1 {
+			return key[:innerAt+1]
 		}
-	} else {
-		// Regular package: package/version or package@version
-		if atIdx := strings.LastIndex(key, "@"); atIdx > 0 {
-			name = key[:atIdx]
-			version = key[atIdx+1:]
-		} else {
-			parts := strings.Split(key, "/")
-			if len(parts) >= 2 {
-				name = parts[0]
-				version = parts[1]
-			}
-		}
-		// Handle additional path segments (peer deps)
-		if underscoreIdx := strings.Index(version, "_"); underscoreIdx != -1 {
-			version = version[:underscoreIdx]
-		}
+		return ""
 	}
 
-	return name, version
+	return key[:atIdx]
+}
+
+// parsePnpmV5Key parses v5 format: /package/version or /@scope/package/version
+func parsePnpmV5Key(key string) (name, version string) {
+	// Try @ separator first (v6+ inline format)
+	if atIdx := strings.LastIndex(key, "@"); atIdx > 0 && !strings.HasPrefix(key, "@") {
+		return key[:atIdx], key[atIdx+1:]
+	}
+
+	parts := strings.Split(key, "/")
+
+	// Scoped: @scope/package/version
+	if strings.HasPrefix(key, "@") && len(parts) >= 3 {
+		return parts[0] + "/" + parts[1], parts[2]
+	}
+
+	// Regular: package/version
+	if len(parts) >= 2 {
+		return parts[0], parts[1]
+	}
+
+	return "", ""
+}
+
+// stripPeerDeps removes the peer dependency suffix (e.g., "1.0.0_peer" -> "1.0.0").
+func stripPeerDeps(version string) string {
+	if idx := strings.Index(version, "_"); idx != -1 {
+		return version[:idx]
+	}
+	return version
 }

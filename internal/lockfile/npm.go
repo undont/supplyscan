@@ -34,12 +34,12 @@ type npmPackageJSON struct {
 }
 
 type npmDependencyJSON struct {
-	Version   string                       `json:"version"`
-	Resolved  string                       `json:"resolved"`
-	Integrity string                       `json:"integrity"`
-	Dev       bool                         `json:"dev"`
-	Optional  bool                         `json:"optional"`
-	Requires  map[string]string            `json:"requires"`
+	Version      string                       `json:"version"`
+	Resolved     string                       `json:"resolved"`
+	Integrity    string                       `json:"integrity"`
+	Dev          bool                         `json:"dev"`
+	Optional     bool                         `json:"optional"`
+	Requires     map[string]string            `json:"requires"`
 	Dependencies map[string]npmDependencyJSON `json:"dependencies"`
 }
 

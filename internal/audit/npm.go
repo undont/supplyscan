@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -165,12 +164,7 @@ func (c *Client) doAudit(req *Request) (*Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			fmt.Printf("failed to close response body: %v\n", err)
-		}
-	}(resp.Body)
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("audit API returned status %d", resp.StatusCode)
@@ -188,14 +182,14 @@ func (c *Client) doAudit(req *Request) (*Response, error) {
 func convertAdvisories(advisories map[string]Advisory) []types.VulnerabilityFinding {
 	var findings []types.VulnerabilityFinding
 
-	for _, adv := range advisories {
+	for _, adv := range advisories { //nolint:gocritic // rangeValCopy: can't avoid copy when ranging over map values
 		// Get affected versions from findings
 		for _, f := range adv.Findings {
 			finding := types.VulnerabilityFinding{
 				Severity:         normaliseSeverity(adv.Severity),
 				Package:          adv.ModuleName,
 				InstalledVersion: f.Version,
-				ID:               getAdvisoryID(adv),
+				ID:               getAdvisoryID(&adv),
 				Title:            adv.Title,
 				PatchedIn:        adv.PatchedVersions,
 			}
@@ -207,7 +201,7 @@ func convertAdvisories(advisories map[string]Advisory) []types.VulnerabilityFind
 			finding := types.VulnerabilityFinding{
 				Severity:  normaliseSeverity(adv.Severity),
 				Package:   adv.ModuleName,
-				ID:        getAdvisoryID(adv),
+				ID:        getAdvisoryID(&adv),
 				Title:     adv.Title,
 				PatchedIn: adv.PatchedVersions,
 			}
@@ -230,7 +224,7 @@ func normaliseSeverity(s string) string {
 }
 
 // getAdvisoryID returns the best identifier for an advisory.
-func getAdvisoryID(adv Advisory) string {
+func getAdvisoryID(adv *Advisory) string {
 	if adv.GHSAID != "" {
 		return adv.GHSAID
 	}

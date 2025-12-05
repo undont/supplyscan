@@ -30,8 +30,8 @@ func (l *bunLockfile) Dependencies() []types.Dependency {
 // bunLockfileJSON represents the structure of bun.lock.
 // The format is JSONC (JSON with comments).
 type bunLockfileJSON struct {
-	LockfileVersion int                           `json:"lockfileVersion"`
-	Packages        map[string][]json.RawMessage  `json:"packages"`
+	LockfileVersion int                          `json:"lockfileVersion"`
+	Packages        map[string][]json.RawMessage `json:"packages"`
 }
 
 // ParseBun parses a bun.lock file.
@@ -133,7 +133,7 @@ func extractBunPackageName(key string) string {
 // Format might be "4.17.21" or "lodash@4.17.21" or a URL.
 func extractBunVersion(s string) string {
 	// If it looks like a version number, return as-is
-	if len(s) > 0 && (s[0] >= '0' && s[0] <= '9') {
+	if s != "" && (s[0] >= '0' && s[0] <= '9') {
 		return s
 	}
 

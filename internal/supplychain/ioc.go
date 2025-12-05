@@ -36,7 +36,7 @@ func NewIOCCache() (*IOCCache, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -79,7 +79,7 @@ func (c *IOCCache) Save(db *types.IOCDatabase) error {
 	}
 
 	path := filepath.Join(c.cacheDir, "iocs.json")
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // LoadMeta loads the cache metadata.
@@ -109,7 +109,7 @@ func (c *IOCCache) SaveMeta(meta *types.IOCMeta) error {
 	}
 
 	path := filepath.Join(c.cacheDir, "meta.json")
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // IsStale checks if the cache is older than the TTL.
@@ -209,72 +209,31 @@ func fetchIOCs() (*types.IOCDatabase, error) {
 // parseIOCCSV parses the CSV IOC data.
 // Expected format: package_name,package_versions,sources
 func parseIOCCSV(r io.Reader) (*types.IOCDatabase, error) {
-	packages := make(map[string]types.CompromisedPackage)
-
 	reader := csv.NewReader(bufio.NewReader(r))
 
-	// Read header
 	header, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV header: %w", err)
 	}
 
-	// Find column indices
-	nameIdx := findColumnIndex(header, "package_name", "name", "package")
-	versionIdx := findColumnIndex(header, "package_versions", "version", "compromised_version")
-	sourceIdx := findColumnIndex(header, "sources", "source", "reporter")
-
-	if nameIdx == -1 || versionIdx == -1 {
+	cols := findIOCColumns(header)
+	if cols.name == -1 || cols.version == -1 {
 		return nil, fmt.Errorf("CSV missing required columns (package_name, package_versions)")
 	}
 
-	// Read data rows
+	packages := make(map[string]types.CompromisedPackage)
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			continue // Skip malformed rows
-		}
-
-		if len(record) <= nameIdx || len(record) <= versionIdx {
 			continue
 		}
 
-		name := strings.TrimSpace(record[nameIdx])
-		versionsStr := strings.TrimSpace(record[versionIdx])
-
-		if name == "" || versionsStr == "" {
-			continue
-		}
-
-		// Parse sources (comma-separated)
-		var sources []string
-		if sourceIdx != -1 && len(record) > sourceIdx {
-			sourcesStr := strings.TrimSpace(record[sourceIdx])
-			for _, s := range strings.Split(sourcesStr, ",") {
-				s = strings.TrimSpace(s)
-				if s != "" {
-					sources = append(sources, s)
-				}
-			}
-		}
-
-		// Parse versions (may be comma-separated or single)
-		var versions []string
-		for _, v := range strings.Split(versionsStr, ",") {
-			v = strings.TrimSpace(v)
-			if v != "" {
-				versions = append(versions, v)
-			}
-		}
-
-		packages[name] = types.CompromisedPackage{
-			Name:     name,
-			Versions: versions,
-			Sources:  sources,
-			Campaign: "shai-hulud-v2",
+		pkg := parseIOCRecord(record, cols)
+		if pkg != nil {
+			packages[pkg.Name] = *pkg
 		}
 	}
 
@@ -283,6 +242,57 @@ func parseIOCCSV(r io.Reader) (*types.IOCDatabase, error) {
 		LastUpdated: time.Now().UTC().Format(time.RFC3339),
 		Sources:     []string{"datadog"},
 	}, nil
+}
+
+// iocColumns holds the column indices for IOC CSV parsing.
+type iocColumns struct {
+	name, version, source int
+}
+
+// findIOCColumns locates the required columns in the CSV header.
+func findIOCColumns(header []string) iocColumns {
+	return iocColumns{
+		name:    findColumnIndex(header, "package_name", "name", "package"),
+		version: findColumnIndex(header, "package_versions", "version", "compromised_version"),
+		source:  findColumnIndex(header, "sources", "source", "reporter"),
+	}
+}
+
+// parseIOCRecord parses a single CSV record into a CompromisedPackage.
+func parseIOCRecord(record []string, cols iocColumns) *types.CompromisedPackage {
+	if len(record) <= cols.name || len(record) <= cols.version {
+		return nil
+	}
+
+	name := strings.TrimSpace(record[cols.name])
+	versionsStr := strings.TrimSpace(record[cols.version])
+	if name == "" || versionsStr == "" {
+		return nil
+	}
+
+	var sources []string
+	if cols.source != -1 && len(record) > cols.source {
+		sources = splitAndTrim(record[cols.source])
+	}
+
+	return &types.CompromisedPackage{
+		Name:     name,
+		Versions: splitAndTrim(versionsStr),
+		Sources:  sources,
+		Campaign: "shai-hulud-v2",
+	}
+}
+
+// splitAndTrim splits a comma-separated string and trims whitespace from each part.
+func splitAndTrim(s string) []string {
+	var result []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 // findColumnIndex finds the index of a column by possible names.
@@ -296,14 +306,4 @@ func findColumnIndex(header []string, names ...string) int {
 		}
 	}
 	return -1
-}
-
-// contains checks if a slice contains a string.
-func contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
 }

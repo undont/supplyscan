@@ -1,0 +1,193 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
+      print-issued-lines: true
+      print-linter-name: true
+
+linters:
+  default: none
+  enable:
+    # Core Go linters (essential)
+    - errcheck          # Check for unchecked errors
+    - govet            # Go vet analysis
+    - ineffassign      # Detect ineffectual assignments
+    - staticcheck      # Comprehensive static analysis (includes gosimple & stylecheck)
+    - unused           # Find unused code
+    
+    # Code quality and style
+    - bodyclose        # Check for unclosed HTTP response bodies
+    - copyloopvar      # Check for loop variable copying issues
+    - gosec            # Security analysis
+    - misspell         # Find misspelled words
+    - unconvert        # Remove unnecessary conversions
+    
+    # Performance and best practices
+    - gocyclo          # Cyclomatic complexity
+    - gocognit         # Cognitive complexity
+    - funlen           # Function length
+    - nestif           # Deeply nested if statements
+    - dupl             # Duplicate code detection
+    - goconst          # Find repeated strings that could be constants
+    - gocritic         # Comprehensive Go critique
+    - depguard         # Dependency guard
+    - godox            # TODO/FIXME comments
+    - errorlint        # Error handling improvements
+    
+    # Additional modern linters
+    - revive           # Replacement for golint
+    - predeclared      # Check for shadowed predeclared identifiers
+    - nolintlint       # Check nolint directives
+    - gomoddirectives  # Check go.mod directives
+
+  settings:
+    govet:
+      settings:
+        printf:
+          funcs:
+            - (github.com/sirupsen/logrus.FieldLogger).Infof
+            - (github.com/sirupsen/logrus.FieldLogger).Warnf
+            - (github.com/sirupsen/logrus.FieldLogger).Errorf
+            - (github.com/sirupsen/logrus.FieldLogger).Fatalf
+
+    gocyclo:
+      min-complexity: 15
+
+    dupl:
+      threshold: 100
+
+    goconst:
+      min-len: 2
+      min-occurrences: 3
+
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: "reflect"
+              desc: "avoid reflect package for performance reasons"
+
+    misspell:
+      locale: US
+      ignore-rules: []
+
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+        - unnamedResult
+
+    funlen:
+      lines: 100
+      statements: 50
+
+    gocognit:
+      min-complexity: 20
+
+    nestif:
+      min-complexity: 4
+
+    godox:
+      keywords:
+        - NOTE
+        - OPTIMIZE
+        - HACK
+        - TODO
+        - FIXME
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+          arguments:
+            - "disableStutteringCheck"
+        - name: var-naming
+        - name: package-comments
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: '_test\.go'
+        linters:
+          - funlen
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+      - path: 'tests/.*\.go'
+        linters:
+          - funlen
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - bodyclose
+      - path: '(.+)\.go$'
+        text: 'Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*printf?|os\.(Un)?Setenv). is not checked'
+      - path: '(.+)\.go$'
+        text: "exported (type|method|function) .* should have comment or be unexported"
+      # G304: File inclusion via variable - expected for lockfile scanner
+      - path: 'internal/lockfile/.*\.go$'
+        linters:
+          - gosec
+        text: 'G304'
+      - path: 'internal/supplychain/ioc\.go$'
+        linters:
+          - gosec
+        text: 'G304'
+      # nestif: Parser logic requires nested conditionals
+      - path: 'internal/lockfile/.*\.go$'
+        linters:
+          - nestif
+      - path: 'internal/supplychain/shaihulud\.go$'
+        linters:
+          - nestif
+      # revive: Types package is conventional for shared types
+      - path: 'internal/types/types\.go$'
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofmt            # Go formatting
+    - goimports        # Import formatting
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/seanhalberthal/supplyscan-mcp
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+severity:
+  default: warning
+  rules:
+    - linters:
+        - errcheck
+        - staticcheck
+        - govet
+        - gosec
+        - errorlint
+      severity: error

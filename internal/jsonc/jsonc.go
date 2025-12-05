@@ -9,67 +9,109 @@ import (
 // Handles both single-line (//) and multi-line (/* */) comments.
 // Preserves strings that contain comment-like sequences.
 func StripComments(data []byte) []byte {
-	var result bytes.Buffer
-	inString := false
-	inSingleComment := false
-	inMultiComment := false
-	i := 0
+	p := &jsoncParser{data: data, result: &bytes.Buffer{}}
+	p.parse()
+	return p.result.Bytes()
+}
 
-	for i < len(data) {
-		// Handle escape sequences in strings
-		if inString && data[i] == '\\' && i+1 < len(data) {
-			result.WriteByte(data[i])
-			result.WriteByte(data[i+1])
-			i += 2
-			continue
+type parserState int
+
+const (
+	stateNormal parserState = iota
+	stateString
+	stateSingleComment
+	stateMultiComment
+)
+
+type jsoncParser struct {
+	data   []byte
+	result *bytes.Buffer
+	pos    int
+	state  parserState
+}
+
+func (p *jsoncParser) parse() {
+	for p.pos < len(p.data) {
+		switch p.state {
+		case stateString:
+			p.handleString()
+		case stateSingleComment:
+			p.handleSingleComment()
+		case stateMultiComment:
+			p.handleMultiComment()
+		default:
+			p.handleNormal()
 		}
+	}
+}
 
-		// Toggle string state
-		if data[i] == '"' && !inSingleComment && !inMultiComment {
-			inString = !inString
-			result.WriteByte(data[i])
-			i++
-			continue
-		}
+func (p *jsoncParser) handleNormal() {
+	c := p.data[p.pos]
 
-		// Skip content while in comments
-		if inSingleComment {
-			if data[i] == '\n' {
-				inSingleComment = false
-				result.WriteByte('\n') // Preserve line breaks
-			}
-			i++
-			continue
-		}
-
-		if inMultiComment {
-			if i+1 < len(data) && data[i] == '*' && data[i+1] == '/' {
-				inMultiComment = false
-				i += 2
-			} else {
-				i++
-			}
-			continue
-		}
-
-		// Detect comment starts (only outside strings)
-		if !inString && i+1 < len(data) {
-			if data[i] == '/' && data[i+1] == '/' {
-				inSingleComment = true
-				i += 2
-				continue
-			}
-			if data[i] == '/' && data[i+1] == '*' {
-				inMultiComment = true
-				i += 2
-				continue
-			}
-		}
-
-		// Regular character
-		result.WriteByte(data[i])
-		i++
+	// Check for string start
+	if c == '"' {
+		p.state = stateString
+		p.result.WriteByte(c)
+		p.pos++
+		return
 	}
 
-	return result.Bytes()
+	// Check for comment start
+	if p.hasNext() && c == '/' {
+		next := p.data[p.pos+1]
+		if next == '/' {
+			p.state = stateSingleComment
+			p.pos += 2
+			return
+		}
+		if next == '*' {
+			p.state = stateMultiComment
+			p.pos += 2
+			return
+		}
+	}
+
+	p.result.WriteByte(c)
+	p.pos++
+}
+
+func (p *jsoncParser) handleString() {
+	c := p.data[p.pos]
+
+	// Handle escape sequences
+	if c == '\\' && p.hasNext() {
+		p.result.WriteByte(c)
+		p.result.WriteByte(p.data[p.pos+1])
+		p.pos += 2
+		return
+	}
+
+	// End of string
+	if c == '"' {
+		p.state = stateNormal
+	}
+
+	p.result.WriteByte(c)
+	p.pos++
+}
+
+func (p *jsoncParser) handleSingleComment() {
+	if p.data[p.pos] == '\n' {
+		p.state = stateNormal
+		p.result.WriteByte('\n')
+	}
+	p.pos++
+}
+
+func (p *jsoncParser) handleMultiComment() {
+	if p.hasNext() && p.data[p.pos] == '*' && p.data[p.pos+1] == '/' {
+		p.state = stateNormal
+		p.pos += 2
+		return
+	}
+	p.pos++
+}
+
+func (p *jsoncParser) hasNext() bool {
+	return p.pos+1 < len(p.data)
 }

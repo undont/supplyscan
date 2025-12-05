@@ -4,8 +4,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
 // yarnBerryLockfile represents a parsed yarn.lock v2+ (berry) file.

@@ -28,8 +28,8 @@ func (l *denoLockfile) Dependencies() []types.Dependency {
 
 // denoLockfileJSON represents the structure of deno.lock.
 type denoLockfileJSON struct {
-	Version  string            `json:"version"`
-	Packages denoPackages      `json:"packages"`
+	Version  string       `json:"version"`
+	Packages denoPackages `json:"packages"`
 }
 
 type denoPackages struct {
@@ -94,10 +94,7 @@ func parseDenoNPMKey(key string) (name, version string) {
 		}
 	} else {
 		// Regular package: name@version
-		if atIdx := strings.Index(key, "@"); atIdx != -1 {
-			name = key[:atIdx]
-			version = key[atIdx+1:]
-		}
+		name, version, _ = strings.Cut(key, "@")
 	}
 
 	// Clean up version (remove any suffix like _peer)

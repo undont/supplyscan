@@ -2,6 +2,7 @@ package lockfile
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -27,13 +28,9 @@ func (l *yarnClassicLockfile) Dependencies() []types.Dependency {
 	return l.deps
 }
 
-// Regex patterns for yarn classic format
-var (
-	// Matches entry headers like: lodash@^4.17.0: or "@babel/core@^7.0.0":
-	yarnEntryHeaderRe = regexp.MustCompile(`^"?(@?[^@"]+)@[^:]+":?$`)
-	// Matches version line:   version "4.17.21"
-	yarnVersionRe = regexp.MustCompile(`^\s+version\s+"([^"]+)"`)
-)
+// Regex pattern for yarn classic format
+// Matches version line:   version "4.17.21"
+var yarnVersionRe = regexp.MustCompile(`^\s+version\s+"([^"]+)"`)
 
 // parseYarnClassic parses a yarn.lock v1 (classic) file.
 func parseYarnClassic(path string) (Lockfile, error) {
@@ -41,7 +38,12 @@ func parseYarnClassic(path string) (Lockfile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Printf("failed to close yarn.lock file: %v\n", err)
+		}
+	}(file)
 
 	var deps []types.Dependency
 	seen := make(map[string]bool)
