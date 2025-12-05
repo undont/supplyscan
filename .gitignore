@@ -38,3 +38,4 @@ go.work.sum
 /.idea/modules.xml
 /.idea/vcs.xml
 /.idea/supplyscan-mcp.iml
+/.claude/
