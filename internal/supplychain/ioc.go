@@ -207,7 +207,7 @@ func fetchIOCs() (*types.IOCDatabase, error) {
 }
 
 // parseIOCCSV parses the CSV IOC data.
-// Expected format: package_name,version,source,...
+// Expected format: package_name,package_versions,sources
 func parseIOCCSV(r io.Reader) (*types.IOCDatabase, error) {
 	packages := make(map[string]types.CompromisedPackage)
 
@@ -221,11 +221,11 @@ func parseIOCCSV(r io.Reader) (*types.IOCDatabase, error) {
 
 	// Find column indices
 	nameIdx := findColumnIndex(header, "package_name", "name", "package")
-	versionIdx := findColumnIndex(header, "version", "compromised_version")
-	sourceIdx := findColumnIndex(header, "source", "reporter")
+	versionIdx := findColumnIndex(header, "package_versions", "version", "compromised_version")
+	sourceIdx := findColumnIndex(header, "sources", "source", "reporter")
 
 	if nameIdx == -1 || versionIdx == -1 {
-		return nil, fmt.Errorf("CSV missing required columns (package_name, version)")
+		return nil, fmt.Errorf("CSV missing required columns (package_name, package_versions)")
 	}
 
 	// Read data rows
@@ -243,39 +243,39 @@ func parseIOCCSV(r io.Reader) (*types.IOCDatabase, error) {
 		}
 
 		name := strings.TrimSpace(record[nameIdx])
-		version := strings.TrimSpace(record[versionIdx])
+		versionsStr := strings.TrimSpace(record[versionIdx])
 
-		if name == "" || version == "" {
+		if name == "" || versionsStr == "" {
 			continue
 		}
 
-		source := "unknown"
+		// Parse sources (comma-separated)
+		var sources []string
 		if sourceIdx != -1 && len(record) > sourceIdx {
-			source = strings.TrimSpace(record[sourceIdx])
-		}
-
-		// Add to or update package entry
-		pkg, exists := packages[name]
-		if !exists {
-			pkg = types.CompromisedPackage{
-				Name:     name,
-				Versions: []string{},
-				Sources:  []string{},
-				Campaign: "shai-hulud-v2",
+			sourcesStr := strings.TrimSpace(record[sourceIdx])
+			for _, s := range strings.Split(sourcesStr, ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					sources = append(sources, s)
+				}
 			}
 		}
 
-		// Add version if not already present
-		if !contains(pkg.Versions, version) {
-			pkg.Versions = append(pkg.Versions, version)
+		// Parse versions (may be comma-separated or single)
+		var versions []string
+		for _, v := range strings.Split(versionsStr, ",") {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				versions = append(versions, v)
+			}
 		}
 
-		// Add source if not already present
-		if source != "" && !contains(pkg.Sources, source) {
-			pkg.Sources = append(pkg.Sources, source)
+		packages[name] = types.CompromisedPackage{
+			Name:     name,
+			Versions: versions,
+			Sources:  sources,
+			Campaign: "shai-hulud-v2",
 		}
-
-		packages[name] = pkg
 	}
 
 	return &types.IOCDatabase{

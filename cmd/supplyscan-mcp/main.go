@@ -10,13 +10,24 @@ import (
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
+
+// Global scanner instance
+var scan *scanner.Scanner
 
 func main() {
 	// Parse CLI arguments
 	cliMode := flag.Bool("cli", false, "Run in CLI mode instead of MCP server")
 	flag.Parse()
+
+	// Initialise scanner
+	var err error
+	scan, err = scanner.New()
+	if err != nil {
+		log.Fatalf("Failed to initialise scanner: %v", err)
+	}
 
 	if *cliMode {
 		runCLI(flag.Args())
@@ -109,16 +120,10 @@ type RefreshOutput struct {
 // Tool handlers
 
 func handleStatus(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[StatusInput]) (*mcp.CallToolResultFor[StatusOutput], error) {
-	// TODO: Load actual IOC database stats
 	status := StatusOutput{
 		StatusResponse: types.StatusResponse{
-			Version: types.Version,
-			IOCDatabase: types.IOCDatabaseStatus{
-				Packages:    0,
-				Versions:    0,
-				LastUpdated: "not loaded",
-				Sources:     []string{},
-			},
+			Version:            types.Version,
+			IOCDatabase:        scan.GetStatus(),
 			SupportedLockfiles: types.SupportedLockfiles,
 		},
 	}
@@ -132,26 +137,16 @@ func handleScan(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallTool
 		return &mcp.CallToolResultFor[ScanOutput]{IsError: true}, fmt.Errorf("path is required")
 	}
 
-	// TODO: Implement actual scanning logic
-	result := ScanOutput{
-		ScanResult: types.ScanResult{
-			Summary: types.ScanSummary{
-				LockfilesScanned:  0,
-				TotalDependencies: 0,
-				Issues:            types.IssueCounts{},
-			},
-			SupplyChain: types.SupplyChainResult{
-				Findings: []types.SupplyChainFinding{},
-				Warnings: []types.SupplyChainWarning{},
-			},
-			Vulnerabilities: types.VulnerabilityResult{
-				Findings: []types.VulnerabilityFinding{},
-			},
-			Lockfiles: []types.LockfileInfo{},
-		},
+	result, err := scan.Scan(scanner.ScanOptions{
+		Path:       input.Path,
+		Recursive:  input.Recursive,
+		IncludeDev: input.IncludeDev,
+	})
+	if err != nil {
+		return &mcp.CallToolResultFor[ScanOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[ScanOutput]{StructuredContent: result}, nil
+	return &mcp.CallToolResultFor[ScanOutput]{StructuredContent: ScanOutput{ScanResult: *result}}, nil
 }
 
 func handleCheck(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[CheckInput]) (*mcp.CallToolResultFor[CheckOutput], error) {
@@ -163,31 +158,21 @@ func handleCheck(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToo
 		return &mcp.CallToolResultFor[CheckOutput]{IsError: true}, fmt.Errorf("version is required")
 	}
 
-	// TODO: Implement actual check logic
-	result := CheckOutput{
-		CheckResult: types.CheckResult{
-			SupplyChain: types.CheckSupplyChainResult{
-				Compromised: false,
-			},
-			Vulnerabilities: []types.VulnerabilityInfo{},
-		},
+	result, err := scan.CheckPackage(input.Package, input.Version)
+	if err != nil {
+		return &mcp.CallToolResultFor[CheckOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[CheckOutput]{StructuredContent: result}, nil
+	return &mcp.CallToolResultFor[CheckOutput]{StructuredContent: CheckOutput{CheckResult: *result}}, nil
 }
 
 func handleRefresh(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[RefreshInput]) (*mcp.CallToolResultFor[RefreshOutput], error) {
-	// TODO: Implement actual refresh logic
-	result := RefreshOutput{
-		RefreshResult: types.RefreshResult{
-			Updated:       false,
-			PackagesCount: 0,
-			VersionsCount: 0,
-			CacheAgeHours: 0,
-		},
+	result, err := scan.Refresh(params.Arguments.Force)
+	if err != nil {
+		return &mcp.CallToolResultFor[RefreshOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[RefreshOutput]{StructuredContent: result}, nil
+	return &mcp.CallToolResultFor[RefreshOutput]{StructuredContent: RefreshOutput{RefreshResult: *result}}, nil
 }
 
 // CLI mode
@@ -257,56 +242,40 @@ func parseCLIScanFlags(args []string) cliScanOptions {
 
 func runCLIStatus() {
 	status := types.StatusResponse{
-		Version: types.Version,
-		IOCDatabase: types.IOCDatabaseStatus{
-			Packages:    0,
-			Versions:    0,
-			LastUpdated: "not loaded",
-			Sources:     []string{},
-		},
+		Version:            types.Version,
+		IOCDatabase:        scan.GetStatus(),
 		SupportedLockfiles: types.SupportedLockfiles,
 	}
 	printJSON(status)
 }
 
 func runCLIScan(path string, opts cliScanOptions) {
-	// TODO: Implement actual scanning
-	result := types.ScanResult{
-		Summary: types.ScanSummary{
-			LockfilesScanned:  0,
-			TotalDependencies: 0,
-			Issues:            types.IssueCounts{},
-		},
-		SupplyChain: types.SupplyChainResult{
-			Findings: []types.SupplyChainFinding{},
-			Warnings: []types.SupplyChainWarning{},
-		},
-		Vulnerabilities: types.VulnerabilityResult{
-			Findings: []types.VulnerabilityFinding{},
-		},
-		Lockfiles: []types.LockfileInfo{},
+	result, err := scan.Scan(scanner.ScanOptions{
+		Path:       path,
+		Recursive:  opts.Recursive,
+		IncludeDev: opts.IncludeDev,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 	printJSON(result)
 }
 
 func runCLICheck(pkg, version string) {
-	// TODO: Implement actual check
-	result := types.CheckResult{
-		SupplyChain: types.CheckSupplyChainResult{
-			Compromised: false,
-		},
-		Vulnerabilities: []types.VulnerabilityInfo{},
+	result, err := scan.CheckPackage(pkg, version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 	printJSON(result)
 }
 
 func runCLIRefresh(force bool) {
-	// TODO: Implement actual refresh
-	result := types.RefreshResult{
-		Updated:       false,
-		PackagesCount: 0,
-		VersionsCount: 0,
-		CacheAgeHours: 0,
+	result, err := scan.Refresh(force)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 	printJSON(result)
 }
