@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// DataDog consolidated IOC list URL
+	// IOCSourceURL DataDog consolidated IOC list URL
 	IOCSourceURL = "https://raw.githubusercontent.com/DataDog/indicators-of-compromise/main/shai-hulud-2.0/consolidated_iocs.csv"
 
-	// Cache TTL in hours
+	// DefaultCacheTTL Cache TTL in hours
 	DefaultCacheTTL = 6
 )
 

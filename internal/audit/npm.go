@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -12,8 +13,8 @@ import (
 )
 
 const (
-	// npm registry audit endpoint
-	AuditEndpoint = "https://registry.npmjs.org/-/npm/v1/security/audits"
+	// Endpoint npm registry audit endpoint
+	Endpoint = "https://registry.npmjs.org/-/npm/v1/security/audits"
 )
 
 // Client handles npm audit API requests.
@@ -28,38 +29,38 @@ func NewClient() *Client {
 	}
 }
 
-// AuditRequest is the request body for the npm audit API.
-type AuditRequest struct {
-	Name         string                  `json:"name"`
-	Version      string                  `json:"version"`
-	Requires     map[string]string       `json:"requires"`
-	Dependencies map[string]AuditDep     `json:"dependencies"`
+// Request is the request body for the npm audit API.
+type Request struct {
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+	Requires     map[string]string `json:"requires"`
+	Dependencies map[string]Dep    `json:"dependencies"`
 }
 
-// AuditDep represents a dependency in the audit request.
-type AuditDep struct {
+// Dep represents a dependency in the audit request.
+type Dep struct {
 	Version  string            `json:"version"`
 	Requires map[string]string `json:"requires,omitempty"`
 }
 
-// AuditResponse is the response from the npm audit API.
-type AuditResponse struct {
+// Response is the response from the npm audit API.
+type Response struct {
 	Advisories map[string]Advisory `json:"advisories"`
-	Metadata   AuditMetadata       `json:"metadata"`
+	Metadata   Metadata            `json:"metadata"`
 }
 
 // Advisory represents a security advisory.
 type Advisory struct {
-	ID                 int      `json:"id"`
-	Title              string   `json:"title"`
-	ModuleName         string   `json:"module_name"`
-	Severity           string   `json:"severity"`
-	URL                string   `json:"url"`
-	VulnerableVersions string   `json:"vulnerable_versions"`
-	PatchedVersions    string   `json:"patched_versions"`
-	Overview           string   `json:"overview"`
-	GHSAID             string   `json:"github_advisory_id"`
-	CWE                []string `json:"cwe"`
+	ID                 int       `json:"id"`
+	Title              string    `json:"title"`
+	ModuleName         string    `json:"module_name"`
+	Severity           string    `json:"severity"`
+	URL                string    `json:"url"`
+	VulnerableVersions string    `json:"vulnerable_versions"`
+	PatchedVersions    string    `json:"patched_versions"`
+	Overview           string    `json:"overview"`
+	GHSAID             string    `json:"github_advisory_id"`
+	CWE                []string  `json:"cwe"`
 	Findings           []Finding `json:"findings"`
 }
 
@@ -69,8 +70,8 @@ type Finding struct {
 	Paths   []string `json:"paths"`
 }
 
-// AuditMetadata contains metadata about the audit.
-type AuditMetadata struct {
+// Metadata contains metadata about the audit.
+type Metadata struct {
 	Vulnerabilities VulnerabilityCounts `json:"vulnerabilities"`
 	Dependencies    int                 `json:"dependencies"`
 }
@@ -126,18 +127,18 @@ func (c *Client) AuditSinglePackage(name, version string) ([]types.Vulnerability
 }
 
 // buildAuditRequest builds the npm audit request from dependencies.
-func buildAuditRequest(deps []types.Dependency) *AuditRequest {
+func buildAuditRequest(deps []types.Dependency) *Request {
 	requires := make(map[string]string)
-	dependencies := make(map[string]AuditDep)
+	dependencies := make(map[string]Dep)
 
 	for _, dep := range deps {
 		requires[dep.Name] = dep.Version
-		dependencies[dep.Name] = AuditDep{
+		dependencies[dep.Name] = Dep{
 			Version: dep.Version,
 		}
 	}
 
-	return &AuditRequest{
+	return &Request{
 		Name:         "audit-check",
 		Version:      "1.0.0",
 		Requires:     requires,
@@ -146,13 +147,13 @@ func buildAuditRequest(deps []types.Dependency) *AuditRequest {
 }
 
 // doAudit makes the HTTP request to the npm audit API.
-func (c *Client) doAudit(req *AuditRequest) (*AuditResponse, error) {
+func (c *Client) doAudit(req *Request) (*Response, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal audit request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", AuditEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", Endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -164,13 +165,18 @@ func (c *Client) doAudit(req *AuditRequest) (*AuditResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Printf("failed to close response body: %v\n", err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("audit API returned status %d", resp.StatusCode)
 	}
 
-	var auditResp AuditResponse
+	var auditResp Response
 	if err := json.NewDecoder(resp.Body).Decode(&auditResp); err != nil {
 		return nil, fmt.Errorf("failed to decode audit response: %w", err)
 	}
