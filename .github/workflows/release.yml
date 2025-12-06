@@ -125,6 +125,7 @@ jobs:
       - name: Download all artefacts
         uses: actions/download-artifact@v4
         with:
+          pattern: supplyscan-mcp-*
           path: dist
           merge-multiple: true
 

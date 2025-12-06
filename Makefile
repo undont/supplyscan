@@ -19,7 +19,7 @@ build-all: clean
 
 # Run tests
 test:
-	go test -v -race -cover ./...
+	@set -o pipefail; go test -v -race -cover ./... 2>&1 | grep -vE "^\s*(---|PASS: Test|RUN|^coverage: )" | grep -E "(^ok|^FAIL|^\?\?\?|^=== FAIL)"
 
 # Run linter
 lint:
