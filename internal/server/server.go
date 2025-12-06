@@ -65,9 +65,9 @@ type statusOutput struct {
 }
 
 type scanInput struct {
-	Path       string `json:"path" jsonschema:"description=Path to the project directory to scan"`
-	Recursive  bool   `json:"recursive,omitempty" jsonschema:"description=Scan subdirectories for lockfiles"`
-	IncludeDev bool   `json:"include_dev,omitempty" jsonschema:"description=Include dev dependencies in scan"`
+	Path       string `json:"path" jsonschema:"path to the project directory to scan"`
+	Recursive  bool   `json:"recursive,omitempty" jsonschema:"scan subdirectories for lockfiles"`
+	IncludeDev bool   `json:"include_dev,omitempty" jsonschema:"include dev dependencies in scan"`
 }
 
 type scanOutput struct {
@@ -75,8 +75,8 @@ type scanOutput struct {
 }
 
 type checkInput struct {
-	Package string `json:"package" jsonschema:"description=Package name to check"`
-	Version string `json:"version" jsonschema:"description=Package version to check"`
+	Package string `json:"package" jsonschema:"package name to check"`
+	Version string `json:"version" jsonschema:"package version to check"`
 }
 
 type checkOutput struct {
@@ -84,7 +84,7 @@ type checkOutput struct {
 }
 
 type refreshInput struct {
-	Force bool `json:"force,omitempty" jsonschema:"description=Force refresh even if cache is fresh"`
+	Force bool `json:"force,omitempty" jsonschema:"force refresh even if cache is fresh"`
 }
 
 type refreshOutput struct {
