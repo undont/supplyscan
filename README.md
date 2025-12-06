@@ -75,7 +75,7 @@ Add to `claude_desktop_config.json`:
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "/Users/you/projects:/scan:ro",
+        "-v", "/Users/you:/Users/you:ro",
         "ghcr.io/seanhalberthal/supplyscan-mcp:latest"
       ]
     }
@@ -83,11 +83,17 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-Replace `/Users/you/projects` with your projects directory. The `-v` flag mounts it as `/scan` inside the container (read-only).
+Replace `/Users/you` with your home directory path. The `-v` flag mounts it at the same path inside the container (read-only), so file paths work naturally.
+
+**Tighter access**: To limit access to a specific folder, mount it at the same path:
+
+```json
+"-v", "/Users/you/projects:/Users/you/projects:ro"
+```
 
 ### Cursor / VS Code (Docker)
 
-These IDEs support workspace variables:
+These IDEs support workspace variables, which makes configuration simpler:
 
 ```json
 {
@@ -96,13 +102,15 @@ These IDEs support workspace variables:
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "${workspaceFolder}:/scan:ro",
+        "-v", "${workspaceFolder}:${workspaceFolder}:ro",
         "ghcr.io/seanhalberthal/supplyscan-mcp:latest"
       ]
     }
   }
 }
 ```
+
+The workspace folder is mounted at the same path inside the container, so paths work naturally.
 
 ### Claude Desktop (Binary)
 
