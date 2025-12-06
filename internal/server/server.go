@@ -29,7 +29,7 @@ func Run(s *scanner.Scanner) {
 
 	registerTools(server)
 
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+	if err := server.Run(context.Background(), mcp.NewStdioTransport()); err != nil {
 		log.Fatal(err)
 	}
 }
