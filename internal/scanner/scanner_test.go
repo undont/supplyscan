@@ -2,10 +2,10 @@ package scanner
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
@@ -26,55 +26,6 @@ func createTestProject(t *testing.T, lockfiles map[string]string) string {
 	}
 
 	return tmpDir
-}
-
-// Helper to create IOC cache
-func createTestIOCCache(t *testing.T, packages map[string]types.CompromisedPackage) string {
-	t.Helper()
-
-	// Get cache dir
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cacheDir := filepath.Join(home, ".cache", "supplyscan-mcp")
-
-	// Ensure dir exists
-	if err := os.MkdirAll(cacheDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create IOC database
-	db := &types.IOCDatabase{
-		Packages:    packages,
-		LastUpdated: time.Now().UTC().Format(time.RFC3339),
-		Sources:     []string{"test"},
-	}
-	dbData, _ := json.MarshalIndent(db, "", "  ")
-	if err := os.WriteFile(filepath.Join(cacheDir, "iocs.json"), dbData, 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create meta
-	meta := &types.IOCMeta{
-		LastUpdated:  time.Now().UTC().Format(time.RFC3339),
-		PackageCount: len(packages),
-		VersionCount: countVersions(packages),
-	}
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	if err := os.WriteFile(filepath.Join(cacheDir, "meta.json"), metaData, 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	return cacheDir
-}
-
-func countVersions(packages map[string]types.CompromisedPackage) int {
-	count := 0
-	for _, pkg := range packages {
-		count += len(pkg.Versions)
-	}
-	return count
 }
 
 func TestScanOptions_Defaults(t *testing.T) {
@@ -150,8 +101,8 @@ func TestCountIssues(t *testing.T) {
 				{Severity: "high", Package: "high-pkg1"},
 				{Severity: "high", Package: "high-pkg2"},
 				{Severity: "moderate", Package: "mod-pkg"},
-				{Severity: "low", Package: "low-pkg"},      // Not counted
-				{Severity: "info", Package: "info-pkg"},    // Not counted
+				{Severity: "low", Package: "low-pkg"},   // Not counted
+				{Severity: "info", Package: "info-pkg"}, // Not counted
 			},
 		},
 	}
@@ -246,10 +197,8 @@ func TestScan_SingleLockfile(t *testing.T) {
 	// Verify lockfiles list
 	if len(result.Lockfiles) != 1 {
 		t.Errorf("Lockfiles count = %d, want 1", len(result.Lockfiles))
-	} else {
-		if result.Lockfiles[0].Type != "npm" {
-			t.Errorf("Lockfile type = %q, want npm", result.Lockfiles[0].Type)
-		}
+	} else if result.Lockfiles[0].Type != "npm" {
+		t.Errorf("Lockfile type = %q, want npm", result.Lockfiles[0].Type)
 	}
 
 	// Verify arrays are not nil
@@ -637,14 +586,25 @@ func BenchmarkScan(b *testing.B) {
 	}`
 
 	tmpDir, _ := os.MkdirTemp("", "bench-scan-*")
-	defer os.RemoveAll(tmpDir)
+	defer func(path string) {
+		err := os.RemoveAll(path)
+		if err != nil {
+			panic(err)
+		}
+	}(tmpDir)
 
-	os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfileContent), 0644)
+	err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfileContent), 0644)
+	if err != nil {
+		fmt.Printf("Error writing lockfile: %v\n", err)
+	}
 
 	scanner, _ := New()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		scanner.Scan(ScanOptions{Path: tmpDir})
+		_, err := scanner.Scan(ScanOptions{Path: tmpDir})
+		if err != nil {
+			fmt.Printf("Error scanning: %v\n", err)
+		}
 	}
 }

@@ -27,7 +27,7 @@ func New() (*Scanner, error) {
 	}, nil
 }
 
-// ScanOptions configures the scan behavior.
+// ScanOptions configures the scan behaviour.
 type ScanOptions struct {
 	Path       string
 	Recursive  bool
@@ -129,7 +129,7 @@ func (s *Scanner) CheckPackage(name, version string) (*types.CheckResult, error)
 
 	// Audit for vulnerabilities
 	vulns, err := s.auditClient.AuditSinglePackage(name, version)
-	if err == nil {
+	if err == nil && vulns != nil {
 		result.Vulnerabilities = vulns
 	}
 
@@ -148,7 +148,7 @@ func (s *Scanner) GetStatus() types.IOCDatabaseStatus {
 
 // filterNonDev removes dev dependencies from the list.
 func filterNonDev(deps []types.Dependency) []types.Dependency {
-	var filtered []types.Dependency
+	filtered := make([]types.Dependency, 0)
 	for _, dep := range deps {
 		if !dep.Dev {
 			filtered = append(filtered, dep)

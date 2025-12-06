@@ -16,31 +16,69 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
-const (
-	// IOCSourceURL DataDog consolidated IOC list URL
-	IOCSourceURL = "https://raw.githubusercontent.com/DataDog/indicators-of-compromise/main/shai-hulud-2.0/consolidated_iocs.csv"
+// DefaultIOCSourceURL is DataDog's consolidated IOC list URL.
+const DefaultIOCSourceURL = "https://raw.githubusercontent.com/DataDog/indicators-of-compromise/main/shai-hulud-2.0/consolidated_iocs.csv"
 
-	// DefaultCacheTTL Cache TTL in hours
-	DefaultCacheTTL = 6
-)
+// defaultCacheTTL is the cache TTL in hours.
+const defaultCacheTTL = 6
 
 // IOCCache manages the local IOC database cache.
 type IOCCache struct {
-	cacheDir string
+	cacheDir   string
+	sourceURL  string
+	httpClient *http.Client
 }
 
-// NewIOCCache creates a new IOC cache manager.
-func NewIOCCache() (*IOCCache, error) {
-	cacheDir, err := getCacheDir()
-	if err != nil {
-		return nil, err
+// CacheOption configures an IOCCache.
+type CacheOption func(*IOCCache)
+
+// WithCacheDir sets a custom cache directory.
+func WithCacheDir(dir string) CacheOption {
+	return func(c *IOCCache) {
+		c.cacheDir = dir
+	}
+}
+
+// WithSourceURL sets a custom IOC source URL.
+func WithSourceURL(url string) CacheOption {
+	return func(c *IOCCache) {
+		c.sourceURL = url
+	}
+}
+
+// WithCacheHTTPClient sets a custom HTTP client for fetching IOCs.
+func WithCacheHTTPClient(client *http.Client) CacheOption {
+	return func(c *IOCCache) {
+		c.httpClient = client
+	}
+}
+
+// newIOCCache creates a new IOC cache manager.
+func newIOCCache(opts ...CacheOption) (*IOCCache, error) {
+	cache := &IOCCache{
+		sourceURL:  DefaultIOCSourceURL,
+		httpClient: &http.Client{},
 	}
 
-	if err := os.MkdirAll(cacheDir, 0750); err != nil {
+	// Apply options first to allow custom cache dir
+	for _, opt := range opts {
+		opt(cache)
+	}
+
+	// If no custom cache dir, use default
+	if cache.cacheDir == "" {
+		cacheDir, err := getCacheDir()
+		if err != nil {
+			return nil, err
+		}
+		cache.cacheDir = cacheDir
+	}
+
+	if err := os.MkdirAll(cache.cacheDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	return &IOCCache{cacheDir: cacheDir}, nil
+	return cache, nil
 }
 
 // getCacheDir returns the cache directory path.
@@ -71,8 +109,8 @@ func (c *IOCCache) Load() (*types.IOCDatabase, error) {
 	return &db, nil
 }
 
-// Save saves the IOC database to cache.
-func (c *IOCCache) Save(db *types.IOCDatabase) error {
+// save saves the IOC database to cache.
+func (c *IOCCache) save(db *types.IOCDatabase) error {
 	data, err := json.MarshalIndent(db, "", "  ")
 	if err != nil {
 		return err
@@ -82,8 +120,8 @@ func (c *IOCCache) Save(db *types.IOCDatabase) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// LoadMeta loads the cache metadata.
-func (c *IOCCache) LoadMeta() (*types.IOCMeta, error) {
+// loadMeta loads the cache metadata.
+func (c *IOCCache) loadMeta() (*types.IOCMeta, error) {
 	path := filepath.Join(c.cacheDir, "meta.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -101,8 +139,8 @@ func (c *IOCCache) LoadMeta() (*types.IOCMeta, error) {
 	return &meta, nil
 }
 
-// SaveMeta saves the cache metadata.
-func (c *IOCCache) SaveMeta(meta *types.IOCMeta) error {
+// saveMeta saves the cache metadata.
+func (c *IOCCache) saveMeta(meta *types.IOCMeta) error {
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
@@ -112,9 +150,9 @@ func (c *IOCCache) SaveMeta(meta *types.IOCMeta) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// IsStale checks if the cache is older than the TTL.
-func (c *IOCCache) IsStale() bool {
-	meta, err := c.LoadMeta()
+// isStale checks if the cache is older than the TTL.
+func (c *IOCCache) isStale() bool {
+	meta, err := c.loadMeta()
 	if err != nil || meta == nil {
 		return true
 	}
@@ -124,12 +162,12 @@ func (c *IOCCache) IsStale() bool {
 		return true
 	}
 
-	return time.Since(lastUpdated) > time.Duration(DefaultCacheTTL)*time.Hour
+	return time.Since(lastUpdated) > time.Duration(defaultCacheTTL)*time.Hour
 }
 
-// CacheAgeHours returns the age of the cache in hours.
-func (c *IOCCache) CacheAgeHours() int {
-	meta, err := c.LoadMeta()
+// cacheAgeHours returns the age of the cache in hours.
+func (c *IOCCache) cacheAgeHours() int {
+	meta, err := c.loadMeta()
 	if err != nil || meta == nil {
 		return -1
 	}
@@ -142,21 +180,21 @@ func (c *IOCCache) CacheAgeHours() int {
 	return int(time.Since(lastUpdated).Hours())
 }
 
-// Refresh fetches the latest IOC data and updates the cache.
-func (c *IOCCache) Refresh(force bool) (*types.RefreshResult, error) {
-	if !force && !c.IsStale() {
+// refresh fetches the latest IOC data and updates the cache.
+func (c *IOCCache) refresh(force bool) (*types.RefreshResult, error) {
+	if !force && !c.isStale() {
 		// Cache is still fresh
-		meta, _ := c.LoadMeta()
+		meta, _ := c.loadMeta()
 		return &types.RefreshResult{
 			Updated:       false,
 			PackagesCount: meta.PackageCount,
 			VersionsCount: meta.VersionCount,
-			CacheAgeHours: c.CacheAgeHours(),
+			CacheAgeHours: c.cacheAgeHours(),
 		}, nil
 	}
 
 	// Fetch from upstream
-	db, err := fetchIOCs()
+	db, err := c.fetchIOCs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch IOCs: %w", err)
 	}
@@ -169,7 +207,7 @@ func (c *IOCCache) Refresh(force bool) (*types.RefreshResult, error) {
 	}
 
 	// Save to cache
-	if err := c.Save(db); err != nil {
+	if err := c.save(db); err != nil {
 		return nil, fmt.Errorf("failed to save IOC cache: %w", err)
 	}
 
@@ -179,7 +217,7 @@ func (c *IOCCache) Refresh(force bool) (*types.RefreshResult, error) {
 		PackageCount: packageCount,
 		VersionCount: versionCount,
 	}
-	if err := c.SaveMeta(meta); err != nil {
+	if err := c.saveMeta(meta); err != nil {
 		return nil, fmt.Errorf("failed to save cache metadata: %w", err)
 	}
 
@@ -191,9 +229,9 @@ func (c *IOCCache) Refresh(force bool) (*types.RefreshResult, error) {
 	}, nil
 }
 
-// fetchIOCs fetches the IOC list from DataDog's GitHub.
-func fetchIOCs() (*types.IOCDatabase, error) {
-	resp, err := http.Get(IOCSourceURL)
+// fetchIOCs fetches the IOC list from the configured source.
+func (c *IOCCache) fetchIOCs() (*types.IOCDatabase, error) {
+	resp, err := c.httpClient.Get(c.sourceURL)
 	if err != nil {
 		return nil, err
 	}
@@ -295,12 +333,12 @@ func splitAndTrim(s string) []string {
 	return result
 }
 
-// findColumnIndex finds the index of a column by possible names.
+// findColumnIndex finds the index of a column by possible names (case-insensitive).
 func findColumnIndex(header []string, names ...string) int {
 	for i, col := range header {
-		col = strings.ToLower(strings.TrimSpace(col))
+		col = strings.TrimSpace(col)
 		for _, name := range names {
-			if col == name {
+			if strings.EqualFold(col, name) {
 				return i
 			}
 		}

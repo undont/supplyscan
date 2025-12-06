@@ -27,7 +27,7 @@ func (l *yarnBerryLockfile) Dependencies() []types.Dependency {
 	return l.deps
 }
 
-// yarnBerryEntry represents a single entry in yarn berry lockfile.
+// yarnBerryEntry represents a single entry in yarn berry Lockfile.
 type yarnBerryEntry struct {
 	Version    string `yaml:"version"`
 	Resolution string `yaml:"resolution"`
@@ -121,8 +121,8 @@ func extractBerryPackageName(key string) string {
 	return name
 }
 
-// ParseYarn detects the yarn format and parses accordingly.
-func ParseYarn(path string) (Lockfile, error) {
+// parseYarn detects the yarn format and parses accordingly.
+func parseYarn(path string) (Lockfile, error) {
 	isClassic, err := isYarnClassic(path)
 	if err != nil {
 		return nil, err

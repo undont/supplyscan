@@ -1,10 +1,17 @@
 package lockfile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
+)
+
+const (
+	npmType             = "npm"
+	packageLockJSON     = "package-lock.json"
+	packageLockJSONPath = "../../testdata/npm-v3/package-lock.json"
 )
 
 func TestIsLockfile(t *testing.T) {
@@ -34,14 +41,13 @@ func TestIsLockfile(t *testing.T) {
 }
 
 func TestDetectAndParse_NPMv3(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "npm-v3", "package-lock.json")
-	lf, err := DetectAndParse(path)
+	lf, err := DetectAndParse(packageLockJSONPath)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != "npm" {
-		t.Errorf("Type() = %v, want npm", lf.Type())
+	if lf.Type() != npmType {
+		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
 	}
 
 	deps := lf.Dependencies()
@@ -84,14 +90,14 @@ func TestDetectAndParse_NPMv3(t *testing.T) {
 }
 
 func TestDetectAndParse_NPMv2(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "npm-v2", "package-lock.json")
+	path := filepath.Join("..", "..", "testdata", "npm-v2", packageLockJSON)
 	lf, err := DetectAndParse(path)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != "npm" {
-		t.Errorf("Type() = %v, want npm", lf.Type())
+	if lf.Type() != npmType {
+		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
 	}
 
 	deps := lf.Dependencies()
@@ -111,14 +117,14 @@ func TestDetectAndParse_NPMv2(t *testing.T) {
 }
 
 func TestDetectAndParse_NPMv1(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "npm-v1", "package-lock.json")
+	path := filepath.Join("..", "..", "testdata", "npm-v1", packageLockJSON)
 	lf, err := DetectAndParse(path)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != "npm" {
-		t.Errorf("Type() = %v, want npm", lf.Type())
+	if lf.Type() != npmType {
+		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
 	}
 
 	deps := lf.Dependencies()
@@ -137,7 +143,7 @@ func TestDetectAndParse_NPMv1(t *testing.T) {
 }
 
 func TestDetectAndParse_YarnClassic(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "yarn", "yarn-classic.lock")
+	path := filepath.Join("..", "..", "testdata", "yarn-classic", "yarn.lock")
 	lf, err := DetectAndParse(path)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)
@@ -159,10 +165,10 @@ func TestDetectAndParse_YarnClassic(t *testing.T) {
 
 	// Check scoped and regular packages
 	expectedPackages := map[string]string{
-		"lodash":           "4.17.21",
-		"express":          "4.18.2",
+		"lodash":            "4.17.21",
+		"express":           "4.18.2",
 		"@babel/code-frame": "7.22.13",
-		"@types/react":     "18.2.25",
+		"@types/react":      "18.2.25",
 	}
 
 	for name, version := range expectedPackages {
@@ -175,7 +181,7 @@ func TestDetectAndParse_YarnClassic(t *testing.T) {
 }
 
 func TestDetectAndParse_YarnBerry(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "yarn", "yarn-berry.lock")
+	path := filepath.Join("..", "..", "testdata", "yarn-berry", "yarn.lock")
 	lf, err := DetectAndParse(path)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)
@@ -332,7 +338,7 @@ func TestDetectAndParse_UnknownFormat(t *testing.T) {
 	}
 
 	_, err := DetectAndParse(unknownFile)
-	if err != ErrUnknownFormat {
+	if !errors.Is(err, errUnknownFormat) {
 		t.Errorf("Expected ErrUnknownFormat, got %v", err)
 	}
 }
@@ -370,8 +376,8 @@ func TestFindLockfiles_NonRecursive(t *testing.T) {
 		t.Errorf("FindLockfiles() found %d files, want 1", len(lockfiles))
 	}
 
-	if len(lockfiles) > 0 && filepath.Base(lockfiles[0]) != "package-lock.json" {
-		t.Errorf("Expected package-lock.json, got %s", filepath.Base(lockfiles[0]))
+	if len(lockfiles) > 0 && filepath.Base(lockfiles[0]) != packageLockJSON {
+		t.Errorf("Expected %s, got %s", packageLockJSON, filepath.Base(lockfiles[0]))
 	}
 }
 
@@ -612,7 +618,7 @@ func TestDependencyDeduplication(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lf, err := ParseNPM(lockfilePath)
+	lf, err := parseNPM(lockfilePath)
 	if err != nil {
 		t.Fatalf("ParseNPM() error = %v", err)
 	}
@@ -630,17 +636,35 @@ func TestDependencyDeduplication(t *testing.T) {
 	}
 }
 
+// validateLockfileDependencies checks that a lockfile's dependencies are valid
+func validateLockfileDependencies(t *testing.T, lf Lockfile) {
+	t.Helper()
+	deps := lf.Dependencies()
+	if len(deps) == 0 {
+		t.Errorf("Expected at least one dependency")
+	}
+
+	for _, dep := range deps {
+		if dep.Name == "" {
+			t.Errorf("Dependency has empty name")
+		}
+		if dep.Version == "" {
+			t.Errorf("Dependency %s has empty version", dep.Name)
+		}
+	}
+}
+
 func TestParseAllFormats_Integration(t *testing.T) {
 	// Integration test to verify all formats can be parsed
 	testCases := []struct {
 		path     string
 		wantType string
 	}{
-		{"testdata/npm/package-lock-v3.json", "npm"},
-		{"testdata/npm/package-lock-v2.json", "npm"},
-		{"testdata/npm/package-lock-v1.json", "npm"},
-		{"testdata/yarn/yarn-classic.lock", "yarn-classic"},
-		{"testdata/yarn/yarn-berry.lock", "yarn-berry"},
+		{"testdata/npm-v3/package-lock.json", "npm"},
+		{"testdata/npm-v2/package-lock.json", "npm"},
+		{"testdata/npm-v1/package-lock.json", "npm"},
+		{"testdata/yarn-classic/yarn.lock", "yarn-classic"},
+		{"testdata/yarn-berry/yarn.lock", "yarn-berry"},
 		{"testdata/pnpm/pnpm-lock.yaml", "pnpm"},
 		{"testdata/bun/bun.lock", "bun"},
 		{"testdata/deno/deno.lock", "deno"},
@@ -658,20 +682,7 @@ func TestParseAllFormats_Integration(t *testing.T) {
 				t.Errorf("Type() = %v, want %v", lf.Type(), tc.wantType)
 			}
 
-			deps := lf.Dependencies()
-			if len(deps) == 0 {
-				t.Errorf("Expected at least one dependency")
-			}
-
-			// Verify all dependencies have required fields
-			for _, dep := range deps {
-				if dep.Name == "" {
-					t.Errorf("Dependency has empty name")
-				}
-				if dep.Version == "" {
-					t.Errorf("Dependency %s has empty version", dep.Name)
-				}
-			}
+			validateLockfileDependencies(t, lf)
 		})
 	}
 }
@@ -720,7 +731,7 @@ func TestLockfileInterface(t *testing.T) {
 
 func TestSortDependencies(t *testing.T) {
 	// Verify dependencies can be sorted consistently
-	path := filepath.Join("..", "..", "testdata", "npm", "package-lock-v3.json")
+	path := filepath.Join("..", "..", "testdata", "npm-v3", "package-lock.json")
 	lf, err := DetectAndParse(path)
 	if err != nil {
 		t.Fatalf("DetectAndParse() error = %v", err)

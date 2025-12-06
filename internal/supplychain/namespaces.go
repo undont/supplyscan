@@ -1,11 +1,13 @@
 package supplychain
 
-import "strings"
+import (
+	"strings"
+)
 
-// AtRiskNamespaces contains npm scopes that have had compromised packages.
+// atRiskNamespaces contains npm scopes that have had compromised packages.
 // Packages from these namespaces trigger warnings even if the installed
 // version appears safe.
-var AtRiskNamespaces = []string{
+var atRiskNamespaces = []string{
 	"@ctrl",
 	"@nativescript-community",
 	"@crowdstrike",
@@ -18,8 +20,8 @@ var AtRiskNamespaces = []string{
 	"@ngx",
 }
 
-// IsAtRiskNamespace checks if a package name belongs to an at-risk namespace.
-func IsAtRiskNamespace(packageName string) bool {
+// isAtRiskNamespace checks if a package name belongs to an at-risk namespace.
+func isAtRiskNamespace(packageName string) bool {
 	if !strings.HasPrefix(packageName, "@") {
 		return false
 	}
@@ -31,7 +33,7 @@ func IsAtRiskNamespace(packageName string) bool {
 	}
 
 	scope := packageName[:slashIdx]
-	for _, ns := range AtRiskNamespaces {
+	for _, ns := range atRiskNamespaces {
 		if scope == ns {
 			return true
 		}
@@ -40,7 +42,7 @@ func IsAtRiskNamespace(packageName string) bool {
 	return false
 }
 
-// GetNamespaceWarning returns a warning message for an at-risk namespace.
-func GetNamespaceWarning(packageName string) string {
-	return "Namespace had compromised packages in Shai-Hulud campaign. This version appears safe but verify."
+// getNamespaceWarning returns a warning message for an at-risk namespace.
+func getNamespaceWarning(packageName string) string {
+	return "Namespace '" + packageName + "' had compromised packages in Shai-Hulud campaign. This version appears safe but verify."
 }

@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint clean docker install
+.PHONY: build build-all test lint lint-fix clean docker install fmt tidy vet check
 
 BINARY := supplyscan-mcp
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -42,5 +42,17 @@ docker:
 install:
 	go install $(LDFLAGS) ./cmd/supplyscan-mcp
 
-# Run all checks (test + lint)
-check: lint test
+# Format Go code
+fmt:
+	go fmt ./...
+
+# Tidy Go modules
+tidy:
+	go mod tidy
+
+# Run go vet
+vet:
+	go vet ./...
+
+# Run all checks (format, tidy, vet, lint, test)
+check: fmt tidy vet lint test

@@ -42,8 +42,8 @@ type denoNPMPackage struct {
 	Dependencies map[string]string `json:"dependencies"`
 }
 
-// ParseDeno parses a deno.lock file, extracting npm dependencies.
-func ParseDeno(path string) (Lockfile, error) {
+// parseDeno parses a deno.lock file, extracting npm dependencies.
+func parseDeno(path string) (Lockfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

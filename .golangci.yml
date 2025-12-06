@@ -9,8 +9,6 @@ output:
     text:
       path: stdout
       colors: true
-      print-issued-lines: true
-      print-linter-name: true
 
 linters:
   default: none
@@ -75,7 +73,7 @@ linters:
               desc: "avoid reflect package for performance reasons"
 
     misspell:
-      locale: US
+      locale: UK
       ignore-rules: []
 
 
@@ -135,6 +133,7 @@ linters:
           - errcheck
           - dupl
           - gosec
+          - goconst
       - path: 'tests/.*\.go'
         linters:
           - funlen

@@ -55,8 +55,8 @@ func (l *npmLockfile) Dependencies() []types.Dependency {
 	return l.deps
 }
 
-// ParseNPM parses a package-lock.json or npm-shrinkwrap.json file.
-func ParseNPM(path string) (Lockfile, error) {
+// parseNPM parses a package-lock.json or npm-shrinkwrap.json file.
+func parseNPM(path string) (Lockfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

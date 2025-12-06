@@ -10,9 +10,28 @@ type Detector struct {
 	db    *types.IOCDatabase
 }
 
+// DetectorOption configures a Detector.
+type DetectorOption func(*detectorConfig)
+
+type detectorConfig struct {
+	cacheOpts []CacheOption
+}
+
+// WithCacheOptions passes options to the underlying IOCCache.
+func WithCacheOptions(opts ...CacheOption) DetectorOption {
+	return func(cfg *detectorConfig) {
+		cfg.cacheOpts = append(cfg.cacheOpts, opts...)
+	}
+}
+
 // NewDetector creates a new supply chain detector.
-func NewDetector() (*Detector, error) {
-	cache, err := NewIOCCache()
+func NewDetector(opts ...DetectorOption) (*Detector, error) {
+	cfg := &detectorConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	cache, err := newIOCCache(cfg.cacheOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -32,9 +51,9 @@ func (d *Detector) EnsureLoaded() error {
 		return err
 	}
 
-	if db == nil || d.cache.IsStale() {
+	if db == nil || d.cache.isStale() {
 		// Refresh the cache
-		_, err := d.cache.Refresh(false)
+		_, err := d.cache.refresh(false)
 		if err != nil {
 			// If refresh fails but we have stale data, use it
 			if db != nil {
@@ -57,7 +76,7 @@ func (d *Detector) EnsureLoaded() error {
 
 // Refresh forces a refresh of the IOC database.
 func (d *Detector) Refresh(force bool) (*types.RefreshResult, error) {
-	result, err := d.cache.Refresh(force)
+	result, err := d.cache.refresh(force)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +114,9 @@ func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding 
 	return nil
 }
 
-// CheckNamespace checks if a package is from an at-risk namespace.
-func (d *Detector) CheckNamespace(name, version string) *types.SupplyChainWarning {
-	if !IsAtRiskNamespace(name) {
+// checkNamespace checks if a package is from an at-risk namespace.
+func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarning {
+	if !isAtRiskNamespace(name) {
 		return nil
 	}
 
@@ -116,7 +135,7 @@ func (d *Detector) CheckNamespace(name, version string) *types.SupplyChainWarnin
 		Type:             "namespace_at_risk",
 		Package:          name,
 		InstalledVersion: version,
-		Note:             GetNamespaceWarning(name),
+		Note:             getNamespaceWarning(name),
 	}
 }
 
@@ -133,7 +152,7 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 		}
 
 		// Check for at-risk namespace
-		if warning := d.CheckNamespace(dep.Name, dep.Version); warning != nil {
+		if warning := d.checkNamespace(dep.Name, dep.Version); warning != nil {
 			warnings = append(warnings, *warning)
 		}
 	}
@@ -143,7 +162,7 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 
 // GetStatus returns the current IOC database status.
 func (d *Detector) GetStatus() types.IOCDatabaseStatus {
-	meta, _ := d.cache.LoadMeta()
+	meta, _ := d.cache.loadMeta()
 	if meta == nil {
 		return types.IOCDatabaseStatus{
 			Packages:    0,

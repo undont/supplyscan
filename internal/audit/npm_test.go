@@ -2,11 +2,16 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+)
+
+const (
+	testLodashVersion = "4.17.21"
 )
 
 func TestNewClient(t *testing.T) {
@@ -17,11 +22,31 @@ func TestNewClient(t *testing.T) {
 	if client.httpClient == nil {
 		t.Error("httpClient is nil")
 	}
+	if client.endpoint != DefaultEndpoint {
+		t.Errorf("endpoint = %q, want %q", client.endpoint, DefaultEndpoint)
+	}
+}
+
+func TestNewClient_WithOptions(t *testing.T) {
+	customHTTP := &http.Client{}
+	customEndpoint := "https://custom.example.com/audit"
+
+	client := NewClient(
+		WithHTTPClient(customHTTP),
+		WithEndpoint(customEndpoint),
+	)
+
+	if client.httpClient != customHTTP {
+		t.Error("WithHTTPClient option not applied")
+	}
+	if client.endpoint != customEndpoint {
+		t.Errorf("endpoint = %q, want %q", client.endpoint, customEndpoint)
+	}
 }
 
 func TestBuildAuditRequest(t *testing.T) {
 	deps := []types.Dependency{
-		{Name: "lodash", Version: "4.17.21"},
+		{Name: "lodash", Version: testLodashVersion},
 		{Name: "@babel/core", Version: "7.23.0"},
 	}
 
@@ -35,16 +60,16 @@ func TestBuildAuditRequest(t *testing.T) {
 	}
 
 	// Check requires
-	if req.Requires["lodash"] != "4.17.21" {
-		t.Errorf("Requires[lodash] = %q, want 4.17.21", req.Requires["lodash"])
+	if req.Requires["lodash"] != testLodashVersion {
+		t.Errorf("Requires[lodash] = %q, want %s", req.Requires["lodash"], testLodashVersion)
 	}
 	if req.Requires["@babel/core"] != "7.23.0" {
 		t.Errorf("Requires[@babel/core] = %q, want 7.23.0", req.Requires["@babel/core"])
 	}
 
 	// Check dependencies
-	if req.Dependencies["lodash"].Version != "4.17.21" {
-		t.Errorf("Dependencies[lodash].Version = %q, want 4.17.21", req.Dependencies["lodash"].Version)
+	if req.Dependencies["lodash"].Version != testLodashVersion {
+		t.Errorf("Dependencies[lodash].Version = %q, want %s", req.Dependencies["lodash"].Version, testLodashVersion)
 	}
 }
 
@@ -88,22 +113,22 @@ func TestNormaliseSeverity(t *testing.T) {
 func TestGetAdvisoryID(t *testing.T) {
 	tests := []struct {
 		name   string
-		adv    Advisory
+		adv    advisory
 		wantID string
 	}{
 		{
 			name:   "with GHSA ID",
-			adv:    Advisory{ID: 123, GHSAID: "GHSA-abcd-1234-efgh"},
+			adv:    advisory{ID: 123, GHSAID: "GHSA-abcd-1234-efgh"},
 			wantID: "GHSA-abcd-1234-efgh",
 		},
 		{
 			name:   "without GHSA ID",
-			adv:    Advisory{ID: 456},
+			adv:    advisory{ID: 456},
 			wantID: "npm:456",
 		},
 		{
 			name:   "empty GHSA ID",
-			adv:    Advisory{ID: 789, GHSAID: ""},
+			adv:    advisory{ID: 789, GHSAID: ""},
 			wantID: "npm:789",
 		},
 	}
@@ -118,7 +143,7 @@ func TestGetAdvisoryID(t *testing.T) {
 }
 
 func TestConvertAdvisories(t *testing.T) {
-	advisories := map[string]Advisory{
+	advisories := map[string]advisory{
 		"1001": {
 			ID:              1001,
 			Title:           "Prototype Pollution",
@@ -126,7 +151,7 @@ func TestConvertAdvisories(t *testing.T) {
 			Severity:        "high",
 			PatchedVersions: ">=4.17.21",
 			GHSAID:          "GHSA-xxxx-yyyy-zzzz",
-			Findings: []Finding{
+			Findings: []finding{
 				{Version: "4.17.20", Paths: []string{"lodash"}},
 			},
 		},
@@ -136,7 +161,7 @@ func TestConvertAdvisories(t *testing.T) {
 			ModuleName:      "minimatch",
 			Severity:        "moderate",
 			PatchedVersions: ">=3.0.5",
-			Findings: []Finding{
+			Findings: []finding{
 				{Version: "3.0.4", Paths: []string{"minimatch"}},
 				{Version: "3.0.3", Paths: []string{"glob>minimatch"}},
 			},
@@ -178,15 +203,15 @@ func TestConvertAdvisories(t *testing.T) {
 }
 
 func TestConvertAdvisories_NoFindings(t *testing.T) {
-	// Advisory without specific findings should still be reported
-	advisories := map[string]Advisory{
+	// advisory without specific findings should still be reported
+	advisories := map[string]advisory{
 		"1001": {
 			ID:              1001,
 			Title:           "Security Issue",
 			ModuleName:      "some-pkg",
 			Severity:        "critical",
 			PatchedVersions: ">=2.0.0",
-			Findings:        []Finding{}, // Empty findings
+			Findings:        []finding{}, // Empty findings
 		},
 	}
 
@@ -205,7 +230,7 @@ func TestConvertAdvisories_NoFindings(t *testing.T) {
 }
 
 func TestConvertAdvisories_Empty(t *testing.T) {
-	findings := convertAdvisories(map[string]Advisory{})
+	findings := convertAdvisories(map[string]advisory{})
 
 	if findings == nil {
 		t.Error("Expected empty slice, got nil")
@@ -217,21 +242,21 @@ func TestConvertAdvisories_Empty(t *testing.T) {
 
 func TestAuditDependencies_MockServer(t *testing.T) {
 	// Create mock server
-	mockResponse := Response{
-		Advisories: map[string]Advisory{
+	mockResponse := response{
+		Advisories: map[string]advisory{
 			"1001": {
 				ID:              1001,
 				Title:           "Test Vulnerability",
 				ModuleName:      "test-pkg",
 				Severity:        "high",
 				PatchedVersions: ">=2.0.0",
-				Findings: []Finding{
+				Findings: []finding{
 					{Version: "1.0.0", Paths: []string{"test-pkg"}},
 				},
 			},
 		},
-		Metadata: Metadata{
-			Vulnerabilities: VulnerabilityCounts{High: 1},
+		Metadata: metadata{
+			Vulnerabilities: vulnerabilityCounts{High: 1},
 			Dependencies:    1,
 		},
 	}
@@ -246,46 +271,51 @@ func TestAuditDependencies_MockServer(t *testing.T) {
 		}
 
 		// Decode request body to verify format
-		var req Request
+		var req request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("Failed to decode request body: %v", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(mockResponse)
+		err := json.NewEncoder(w).Encode(mockResponse)
+		if err != nil {
+			fmt.Printf("Failed to encode mock response: %v\n", err)
+		}
 	}))
 	defer server.Close()
 
-	// Create client that uses mock server
-	client := &Client{httpClient: server.Client()}
-
-	// Override endpoint for test - we need to use doAudit directly
-	// Instead, let's test the full flow with a custom HTTP client
+	// Create client with mock server endpoint
+	client := NewClient(
+		WithHTTPClient(server.Client()),
+		WithEndpoint(server.URL),
+	)
 
 	deps := []types.Dependency{
 		{Name: "test-pkg", Version: "1.0.0"},
 	}
 
-	// Build and execute request manually to use mock server
-	req := buildAuditRequest(deps)
-	body, _ := json.Marshal(req)
-
-	httpReq, _ := http.NewRequest("POST", server.URL, nil)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := server.Client().Post(server.URL, "application/json", httpReq.Body)
+	// Test full AuditDependencies flow
+	findings, err := client.AuditDependencies(deps)
 	if err != nil {
-		t.Skipf("Mock server test: %v", err)
+		t.Fatalf("AuditDependencies() error = %v", err)
 	}
-	defer resp.Body.Close()
 
-	// Just verify the mock server responded correctly
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200, got %d", resp.StatusCode)
+	if len(findings) != 1 {
+		t.Errorf("Expected 1 finding, got %d", len(findings))
+	}
+
+	if findings[0].Package != "test-pkg" {
+		t.Errorf("Package = %q, want test-pkg", findings[0].Package)
+	}
+	if findings[0].Severity != "high" {
+		t.Errorf("Severity = %q, want high", findings[0].Severity)
+	}
+	if findings[0].InstalledVersion != "1.0.0" {
+		t.Errorf("InstalledVersion = %q, want 1.0.0", findings[0].InstalledVersion)
 	}
 
 	// Test that nil/empty deps return early
-	findings, err := client.AuditDependencies(nil)
+	findings, err = client.AuditDependencies(nil)
 	if err != nil {
 		t.Errorf("AuditDependencies(nil) error = %v", err)
 	}
@@ -300,8 +330,6 @@ func TestAuditDependencies_MockServer(t *testing.T) {
 	if findings != nil {
 		t.Errorf("AuditDependencies([]) = %v, want nil", findings)
 	}
-
-	_ = body // Suppress unused variable warning
 }
 
 func TestAuditDependencies_ServerError(t *testing.T) {
@@ -310,47 +338,138 @@ func TestAuditDependencies_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// We can't easily test with the real client due to hardcoded endpoint
-	// This test verifies the error handling logic
+	client := NewClient(
+		WithHTTPClient(server.Client()),
+		WithEndpoint(server.URL),
+	)
 
-	// Test that the response parsing handles errors
-	client := NewClient()
-
-	// Empty deps should return early
-	findings, err := client.AuditDependencies([]types.Dependency{})
-	if err != nil {
-		t.Errorf("Expected no error for empty deps, got %v", err)
+	deps := []types.Dependency{
+		{Name: "test-pkg", Version: "1.0.0"},
 	}
-	if findings != nil {
-		t.Error("Expected nil findings for empty deps")
+
+	_, err := client.AuditDependencies(deps)
+	if err == nil {
+		t.Error("Expected error for server error response")
 	}
 }
 
-func TestAuditSinglePackage_Integration(t *testing.T) {
-	// This is more of a structural test since we can't hit the real API in tests
-	client := NewClient()
+func TestAuditDependencies_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("invalid json"))
+	}))
+	defer server.Close()
 
-	// Test that it correctly builds single-package request
-	deps := []types.Dependency{{Name: "lodash", Version: "4.17.21"}}
-	req := buildAuditRequest(deps)
+	client := NewClient(
+		WithHTTPClient(server.Client()),
+		WithEndpoint(server.URL),
+	)
 
-	if len(req.Dependencies) != 1 {
-		t.Errorf("Expected 1 dependency in request, got %d", len(req.Dependencies))
+	deps := []types.Dependency{
+		{Name: "test-pkg", Version: "1.0.0"},
 	}
 
-	if _, ok := req.Dependencies["lodash"]; !ok {
-		t.Error("Expected lodash in dependencies")
+	_, err := client.AuditDependencies(deps)
+	if err == nil {
+		t.Error("Expected error for invalid JSON response")
+	}
+}
+
+func TestAuditSinglePackage_MockServer(t *testing.T) {
+	mockResponse := response{
+		Advisories: map[string]advisory{
+			"1001": {
+				ID:              1001,
+				Title:           "Prototype Pollution",
+				ModuleName:      "lodash",
+				Severity:        "high",
+				PatchedVersions: ">=4.17.21",
+				GHSAID:          "GHSA-test-1234",
+				Findings: []finding{
+					{Version: "4.17.20", Paths: []string{"lodash"}},
+				},
+			},
+		},
+		Metadata: metadata{
+			Vulnerabilities: vulnerabilityCounts{High: 1},
+			Dependencies:    1,
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(
+		WithHTTPClient(server.Client()),
+		WithEndpoint(server.URL),
+	)
+
+	vulns, err := client.AuditSinglePackage("lodash", "4.17.20")
+	if err != nil {
+		t.Fatalf("AuditSinglePackage() error = %v", err)
+	}
+
+	if len(vulns) != 1 {
+		t.Errorf("Expected 1 vulnerability, got %d", len(vulns))
+	}
+
+	if vulns[0].ID != "GHSA-test-1234" {
+		t.Errorf("ID = %q, want GHSA-test-1234", vulns[0].ID)
+	}
+	if vulns[0].Severity != "high" {
+		t.Errorf("Severity = %q, want high", vulns[0].Severity)
+	}
+	if vulns[0].Title != "Prototype Pollution" {
+		t.Errorf("Title = %q, want Prototype Pollution", vulns[0].Title)
+	}
+	if vulns[0].PatchedIn != ">=4.17.21" {
+		t.Errorf("PatchedIn = %q, want >=4.17.21", vulns[0].PatchedIn)
+	}
+}
+
+func TestAuditSinglePackage_NoVulnerabilities(t *testing.T) {
+	mockResponse := response{
+		Advisories: map[string]advisory{},
+		Metadata: metadata{
+			Dependencies: 1,
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(
+		WithHTTPClient(server.Client()),
+		WithEndpoint(server.URL),
+	)
+
+	vulns, err := client.AuditSinglePackage("safe-pkg", "1.0.0")
+	if err != nil {
+		t.Fatalf("AuditSinglePackage() error = %v", err)
+	}
+
+	if vulns == nil {
+		t.Error("Expected empty slice, got nil")
+	}
+	if len(vulns) != 0 {
+		t.Errorf("Expected 0 vulnerabilities, got %d", len(vulns))
 	}
 }
 
 func TestRequest_JSONMarshaling(t *testing.T) {
-	req := &Request{
+	req := &request{
 		Name:    "test",
 		Version: "1.0.0",
 		Requires: map[string]string{
 			"lodash": "4.17.21",
 		},
-		Dependencies: map[string]Dep{
+		Dependencies: map[string]dep{
 			"lodash": {Version: "4.17.21"},
 		},
 	}
@@ -360,7 +479,7 @@ func TestRequest_JSONMarshaling(t *testing.T) {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 
-	var parsed Request
+	var parsed request
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
@@ -402,7 +521,7 @@ func TestResponse_JSONUnmarshaling(t *testing.T) {
 		}
 	}`
 
-	var resp Response
+	var resp response
 	if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
@@ -413,7 +532,7 @@ func TestResponse_JSONUnmarshaling(t *testing.T) {
 
 	adv := resp.Advisories["1001"]
 	if adv.ID != 1001 {
-		t.Errorf("Advisory ID = %d, want 1001", adv.ID)
+		t.Errorf("advisory ID = %d, want 1001", adv.ID)
 	}
 	if adv.GHSAID != "GHSA-test-1234" {
 		t.Errorf("GHSAID = %q, want GHSA-test-1234", adv.GHSAID)
@@ -458,7 +577,7 @@ func TestVulnerabilityCounts_JSONUnmarshaling(t *testing.T) {
 		"critical": 5
 	}`
 
-	var counts VulnerabilityCounts
+	var counts vulnerabilityCounts
 	if err := json.Unmarshal([]byte(jsonData), &counts); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
@@ -481,17 +600,17 @@ func TestVulnerabilityCounts_JSONUnmarshaling(t *testing.T) {
 }
 
 func TestDep_JSONMarshaling(t *testing.T) {
-	dep := Dep{
+	d := dep{
 		Version:  "1.0.0",
 		Requires: map[string]string{"other": "2.0.0"},
 	}
 
-	data, err := json.Marshal(dep)
+	data, err := json.Marshal(d)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 
-	var parsed Dep
+	var parsed dep
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
@@ -505,12 +624,12 @@ func TestDep_JSONMarshaling(t *testing.T) {
 }
 
 func TestDep_OmitsEmptyRequires(t *testing.T) {
-	dep := Dep{
+	d := dep{
 		Version:  "1.0.0",
 		Requires: nil,
 	}
 
-	data, err := json.Marshal(dep)
+	data, err := json.Marshal(d)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
@@ -537,14 +656,14 @@ func BenchmarkBuildAuditRequest(b *testing.B) {
 }
 
 func BenchmarkConvertAdvisories(b *testing.B) {
-	advisories := make(map[string]Advisory)
+	advisories := make(map[string]advisory)
 	for i := 0; i < 50; i++ {
-		advisories[string(rune('0'+i))] = Advisory{
+		advisories[string(rune('0'+i))] = advisory{
 			ID:         i,
 			Title:      "Test Vulnerability",
 			ModuleName: "test-pkg",
 			Severity:   "high",
-			Findings: []Finding{
+			Findings: []finding{
 				{Version: "1.0.0"},
 				{Version: "1.0.1"},
 			},

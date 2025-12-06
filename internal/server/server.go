@@ -58,43 +58,43 @@ func registerTools(server *mcp.Server) {
 
 // Tool input/output types
 
-type StatusInput struct{}
+type statusInput struct{}
 
-type StatusOutput struct {
+type statusOutput struct {
 	types.StatusResponse
 }
 
-type ScanInput struct {
+type scanInput struct {
 	Path       string `json:"path" jsonschema:"description=Path to the project directory to scan"`
 	Recursive  bool   `json:"recursive,omitempty" jsonschema:"description=Scan subdirectories for lockfiles"`
 	IncludeDev bool   `json:"include_dev,omitempty" jsonschema:"description=Include dev dependencies in scan"`
 }
 
-type ScanOutput struct {
+type scanOutput struct {
 	types.ScanResult
 }
 
-type CheckInput struct {
+type checkInput struct {
 	Package string `json:"package" jsonschema:"description=Package name to check"`
 	Version string `json:"version" jsonschema:"description=Package version to check"`
 }
 
-type CheckOutput struct {
+type checkOutput struct {
 	types.CheckResult
 }
 
-type RefreshInput struct {
+type refreshInput struct {
 	Force bool `json:"force,omitempty" jsonschema:"description=Force refresh even if cache is fresh"`
 }
 
-type RefreshOutput struct {
+type refreshOutput struct {
 	types.RefreshResult
 }
 
 // Tool handlers
 
-func handleStatus(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[StatusInput]) (*mcp.CallToolResultFor[StatusOutput], error) {
-	status := StatusOutput{
+func handleStatus(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[statusInput]) (*mcp.CallToolResultFor[statusOutput], error) {
+	status := statusOutput{
 		StatusResponse: types.StatusResponse{
 			Version:            types.Version,
 			IOCDatabase:        scan.GetStatus(),
@@ -102,13 +102,13 @@ func handleStatus(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallTo
 		},
 	}
 
-	return &mcp.CallToolResultFor[StatusOutput]{StructuredContent: status}, nil
+	return &mcp.CallToolResultFor[statusOutput]{StructuredContent: status}, nil
 }
 
-func handleScan(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[ScanInput]) (*mcp.CallToolResultFor[ScanOutput], error) {
+func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[scanInput]) (*mcp.CallToolResultFor[scanOutput], error) {
 	input := params.Arguments
 	if input.Path == "" {
-		return &mcp.CallToolResultFor[ScanOutput]{IsError: true}, fmt.Errorf("path is required")
+		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, fmt.Errorf("path is required")
 	}
 
 	result, err := scan.Scan(scanner.ScanOptions{
@@ -117,34 +117,34 @@ func handleScan(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallTool
 		IncludeDev: input.IncludeDev,
 	})
 	if err != nil {
-		return &mcp.CallToolResultFor[ScanOutput]{IsError: true}, err
+		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[ScanOutput]{StructuredContent: ScanOutput{ScanResult: *result}}, nil
+	return &mcp.CallToolResultFor[scanOutput]{StructuredContent: scanOutput{ScanResult: *result}}, nil
 }
 
-func handleCheck(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[CheckInput]) (*mcp.CallToolResultFor[CheckOutput], error) {
+func handleCheck(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[checkInput]) (*mcp.CallToolResultFor[checkOutput], error) {
 	input := params.Arguments
 	if input.Package == "" {
-		return &mcp.CallToolResultFor[CheckOutput]{IsError: true}, fmt.Errorf("package is required")
+		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, fmt.Errorf("package is required")
 	}
 	if input.Version == "" {
-		return &mcp.CallToolResultFor[CheckOutput]{IsError: true}, fmt.Errorf("version is required")
+		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, fmt.Errorf("version is required")
 	}
 
 	result, err := scan.CheckPackage(input.Package, input.Version)
 	if err != nil {
-		return &mcp.CallToolResultFor[CheckOutput]{IsError: true}, err
+		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[CheckOutput]{StructuredContent: CheckOutput{CheckResult: *result}}, nil
+	return &mcp.CallToolResultFor[checkOutput]{StructuredContent: checkOutput{CheckResult: *result}}, nil
 }
 
-func handleRefresh(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[RefreshInput]) (*mcp.CallToolResultFor[RefreshOutput], error) {
+func handleRefresh(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[refreshInput]) (*mcp.CallToolResultFor[refreshOutput], error) {
 	result, err := scan.Refresh(params.Arguments.Force)
 	if err != nil {
-		return &mcp.CallToolResultFor[RefreshOutput]{IsError: true}, err
+		return &mcp.CallToolResultFor[refreshOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[RefreshOutput]{StructuredContent: RefreshOutput{RefreshResult: *result}}, nil
+	return &mcp.CallToolResultFor[refreshOutput]{StructuredContent: refreshOutput{RefreshResult: *result}}, nil
 }

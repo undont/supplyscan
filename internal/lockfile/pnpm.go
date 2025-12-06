@@ -52,8 +52,8 @@ type pnpmResolution struct {
 	Tarball   string `yaml:"tarball"`
 }
 
-// ParsePNPM parses a pnpm-lock.yaml file.
-func ParsePNPM(path string) (Lockfile, error) {
+// parsePNPM parses a pnpm-lock.yaml file.
+func parsePNPM(path string) (Lockfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func ParsePNPM(path string) (Lockfile, error) {
 }
 
 // parsePnpmPackageKey extracts name and version from a pnpm package key.
-// Formats vary by lockfile version:
+// Formats vary by Lockfile version:
 //   - v5: "/lodash/4.17.21"
 //   - v6+: "/lodash@4.17.21" or "lodash@4.17.21"
 //   - Scoped: "/@babel/core@7.23.0" or "/@babel/core/7.23.0"
@@ -129,21 +129,45 @@ func extractPnpmName(key string) string {
 
 // parsePnpmV5Key parses v5 format: /package/version or /@scope/package/version
 func parsePnpmV5Key(key string) (name, version string) {
-	// Try @ separator first (v6+ inline format)
-	if atIdx := strings.LastIndex(key, "@"); atIdx > 0 && !strings.HasPrefix(key, "@") {
+	// For scoped packages in v6+ format: @scope/pkg@version
+	if strings.HasPrefix(key, "@") {
+		// Find the @ that separates name from version (not the scope @)
+		slashIdx := strings.Index(key, "/")
+		if slashIdx == -1 {
+			return "", ""
+		}
+		// Look for @ after the slash
+		rest := key[slashIdx+1:]
+		atIdx := strings.Index(rest, "@")
+		if atIdx != -1 {
+			// v6+ format: @scope/pkg@version
+			return key[:slashIdx+1+atIdx], rest[atIdx+1:]
+		}
+		// v5 format: @scope/pkg/version
+		parts := strings.Split(key, "/")
+		if len(parts) >= 3 {
+			return parts[0] + "/" + parts[1], parts[2]
+		}
+		return "", ""
+	}
+
+	// Non-scoped packages
+	// Check if it's v5 format (pkg/version) vs v6+ format (pkg@version)
+	slashIdx := strings.Index(key, "/")
+	atIdx := strings.Index(key, "@")
+
+	// If there's a slash before any @, it's v5 format
+	if slashIdx != -1 && (atIdx == -1 || slashIdx < atIdx) {
+		parts := strings.Split(key, "/")
+		if len(parts) >= 2 {
+			return parts[0], parts[1]
+		}
+		return "", ""
+	}
+
+	// v6+ format: pkg@version
+	if atIdx > 0 {
 		return key[:atIdx], key[atIdx+1:]
-	}
-
-	parts := strings.Split(key, "/")
-
-	// Scoped: @scope/package/version
-	if strings.HasPrefix(key, "@") && len(parts) >= 3 {
-		return parts[0] + "/" + parts[1], parts[2]
-	}
-
-	// Regular: package/version
-	if len(parts) >= 2 {
-		return parts[0], parts[1]
 	}
 
 	return "", ""

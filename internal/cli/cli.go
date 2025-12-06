@@ -11,11 +11,17 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
+const errorFormat = "Error: %v\n"
+
+// exitFunc is the function used to exit the program. Override in tests.
+var exitFunc = os.Exit
+
 // Run executes the CLI with the given scanner and arguments.
 func Run(scan *scanner.Scanner, args []string) {
 	if len(args) == 0 {
 		printUsage()
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 
 	switch args[0] {
@@ -23,23 +29,26 @@ func Run(scan *scanner.Scanner, args []string) {
 		runStatus(scan)
 	case "scan":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Error: scan requires a path argument")
-			os.Exit(1)
+			_, _ = fmt.Fprintln(os.Stderr, "Error: scan requires a path argument")
+			exitFunc(1)
+			return
 		}
 		runScan(scan, args[1], parseScanFlags(args[2:]))
 	case "check":
 		if len(args) < 3 {
-			fmt.Fprintln(os.Stderr, "Error: check requires package and version arguments")
-			os.Exit(1)
+			_, _ = fmt.Fprintln(os.Stderr, "Error: check requires package and version arguments")
+			exitFunc(1)
+			return
 		}
 		runCheck(scan, args[1], args[2])
 	case "refresh":
 		force := len(args) > 1 && args[1] == "--force"
 		runRefresh(scan, force)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
 		printUsage()
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 }
 
@@ -91,8 +100,9 @@ func runScan(scan *scanner.Scanner, path string, opts scanOptions) {
 		IncludeDev: opts.IncludeDev,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, errorFormat, err)
+		exitFunc(1)
+		return
 	}
 	printJSON(result)
 }
@@ -100,8 +110,9 @@ func runScan(scan *scanner.Scanner, path string, opts scanOptions) {
 func runCheck(scan *scanner.Scanner, pkg, version string) {
 	result, err := scan.CheckPackage(pkg, version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, errorFormat, err)
+		exitFunc(1)
+		return
 	}
 	printJSON(result)
 }
@@ -109,8 +120,9 @@ func runCheck(scan *scanner.Scanner, pkg, version string) {
 func runRefresh(scan *scanner.Scanner, force bool) {
 	result, err := scan.Refresh(force)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, errorFormat, err)
+		exitFunc(1)
+		return
 	}
 	printJSON(result)
 }

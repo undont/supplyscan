@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,11 +22,17 @@ func captureOutput(f func()) string {
 
 	f()
 
-	w.Close()
+	err := w.Close()
+	if err != nil {
+		fmt.Printf("Error closing pipe: %v\n", err.Error()+"")
+	}
 	os.Stdout = old
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	if err != nil {
+		fmt.Printf("Error copying pipe: %v\n", err.Error()+"")
+	}
 	return buf.String()
 }
 
@@ -37,20 +44,26 @@ func captureStderr(f func()) string {
 
 	f()
 
-	w.Close()
+	err := w.Close()
+	if err != nil {
+		fmt.Printf("Error closing pipe: %v\n", err.Error()+"")
+	}
 	os.Stderr = old
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	if err != nil {
+		fmt.Printf("Error copying pipe: %v\n", err.Error()+"")
+	}
 	return buf.String()
 }
 
 func TestParseScanFlags(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantRec    bool
-		wantDev    bool
+		name    string
+		args    []string
+		wantRec bool
+		wantDev bool
 	}{
 		{
 			name:    "no flags",
@@ -290,7 +303,7 @@ func TestRunRefresh(t *testing.T) {
 		t.Fatalf("scanner.New() error = %v", err)
 	}
 
-	// Note: This might actually hit the network in a real test
+	// This might actually hit the network in a real test
 	// In production tests, you'd mock the HTTP client
 	output := captureOutput(func() {
 		runRefresh(scan, false) // Don't force to use cached
@@ -383,28 +396,259 @@ func TestScanOptions_Default(t *testing.T) {
 	// But parseScanFlags sets IncludeDev to true by default
 }
 
-func TestRun_UnknownCommand(t *testing.T) {
+// mockExit captures exit codes instead of terminating.
+func mockExit(t *testing.T) (restore func(), exitCode *int) {
+	t.Helper()
+	code := 0
+	exitCode = &code
+	oldExit := exitFunc
+	exitFunc = func(c int) {
+		*exitCode = c
+	}
+	restore = func() {
+		exitFunc = oldExit
+	}
+	return restore, exitCode
+}
+
+func TestRun_NoArgs(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
 	}
 
-	// Capture stderr and check for error message
-	// Note: Run calls os.Exit, so we need to handle that
-	// For now, just verify the printUsage path
-
-	stderr := captureStderr(func() {
-		// We can't test os.Exit directly, but we can test the error message path
-		// by checking that unknown commands produce error output
+	output := captureOutput(func() {
+		Run(scan, []string{})
 	})
 
-	// This is a limited test due to os.Exit behavior
-	_ = scan
-	_ = stderr
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1", *exitCode)
+	}
+	if !strings.Contains(output, "supplyscan-mcp") {
+		t.Error("Expected usage output")
+	}
+}
+
+func TestRun_UnknownCommand(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	stderr := captureStderr(func() {
+		Run(scan, []string{"unknown-command"})
+	})
+
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1", *exitCode)
+	}
+	if !strings.Contains(stderr, "Unknown command: unknown-command") {
+		t.Errorf("Expected unknown command error, got: %s", stderr)
+	}
+}
+
+func TestRun_StatusCommand(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		Run(scan, []string{"status"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+
+	var status types.StatusResponse
+	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRun_ScanCommand_MissingPath(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	stderr := captureStderr(func() {
+		Run(scan, []string{"scan"})
+	})
+
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1", *exitCode)
+	}
+	if !strings.Contains(stderr, "scan requires a path argument") {
+		t.Errorf("Expected path required error, got: %s", stderr)
+	}
+}
+
+func TestRun_ScanCommand_InvalidPath(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	stderr := captureStderr(func() {
+		Run(scan, []string{"scan", "/nonexistent/path"})
+	})
+
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1", *exitCode)
+	}
+	if !strings.Contains(stderr, "Error:") {
+		t.Errorf("Expected error output, got: %s", stderr)
+	}
+}
+
+func TestRun_ScanCommand_WithFlags(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	tmpDir := t.TempDir()
+	lockfile := `{"name": "test", "lockfileVersion": 3, "packages": {"node_modules/a": {"version": "1.0.0"}}}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfile), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		Run(scan, []string{"scan", tmpDir, "--recursive", "--no-dev"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+
+	var result types.ScanResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRun_CheckCommand_MissingArgs(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	// Missing both package and version
+	stderr := captureStderr(func() {
+		Run(scan, []string{"check"})
+	})
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1", *exitCode)
+	}
+	if !strings.Contains(stderr, "check requires package and version arguments") {
+		t.Errorf("Expected args required error, got: %s", stderr)
+	}
+
+	// Reset exit code
+	*exitCode = 0
+
+	// Missing version
+	_ = captureStderr(func() {
+		Run(scan, []string{"check", "lodash"})
+	})
+	if *exitCode != 1 {
+		t.Errorf("Exit code = %d, want 1 (missing version)", *exitCode)
+	}
+}
+
+func TestRun_CheckCommand_Valid(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		Run(scan, []string{"check", "lodash", "4.17.21"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+
+	var result types.CheckResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRun_RefreshCommand(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		Run(scan, []string{"refresh"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+
+	var result types.RefreshResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRun_RefreshCommand_Force(t *testing.T) {
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		Run(scan, []string{"refresh", "--force"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+
+	var result types.RefreshResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
 }
 
 func TestErrorFormat(t *testing.T) {
-	// Verify the error format constant is correct
 	expected := "Error: %v\n"
 	if errorFormat != expected {
 		t.Errorf("errorFormat = %q, want %q", errorFormat, expected)

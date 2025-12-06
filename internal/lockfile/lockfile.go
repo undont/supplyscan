@@ -9,10 +9,10 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
-// ErrUnknownFormat indicates an unrecognized lockfile format.
-var ErrUnknownFormat = errors.New("unknown lockfile format")
+// errUnknownFormat indicates an unrecognised Lockfile format.
+var errUnknownFormat = errors.New("unknown lockfile format")
 
-// Lockfile represents a parsed lockfile.
+// Lockfile represents a parsed Lockfile.
 type Lockfile interface {
 	// Type returns the lockfile format identifier.
 	Type() string
@@ -28,38 +28,55 @@ func DetectAndParse(path string) (Lockfile, error) {
 
 	switch name {
 	case "package-lock.json", "npm-shrinkwrap.json":
-		return ParseNPM(path)
+		return parseNPM(path)
 	case "yarn.lock":
-		return ParseYarn(path)
+		return parseYarn(path)
 	case "pnpm-lock.yaml":
-		return ParsePNPM(path)
+		return parsePNPM(path)
 	case "bun.lock":
-		return ParseBun(path)
+		return parseBun(path)
 	case "deno.lock":
-		return ParseDeno(path)
+		return parseDeno(path)
 	default:
-		return nil, ErrUnknownFormat
+		return nil, errUnknownFormat
 	}
+}
+
+// shouldSkipDir determines if a directory should be skipped during the walk.
+func shouldSkipDir(name, path, rootDir string, recursive bool) bool {
+	if name == "node_modules" {
+		return true
+	}
+	if name != "" && name[0] == '.' {
+		return true
+	}
+	if !recursive && path != rootDir {
+		return true
+	}
+	return false
 }
 
 // FindLockfiles searches a directory for lockfiles.
 // If recursive is true, it searches subdirectories as well.
 func FindLockfiles(dir string, recursive bool) ([]string, error) {
+	// Validate the directory exists first
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("path is not a directory")
+	}
+
 	var lockfiles []string
 
 	walkFn := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip inaccessible paths
+			return nil // Skip inaccessible paths within the directory
 		}
 
-		// Skip node_modules and hidden directories
 		if info.IsDir() {
-			name := info.Name()
-			if name == "node_modules" || (name != "" && name[0] == '.') {
-				return filepath.SkipDir
-			}
-			// If not recursive and not the root dir, skip subdirectories
-			if !recursive && path != dir {
+			if shouldSkipDir(info.Name(), path, dir, recursive) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -78,7 +95,7 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 	return lockfiles, nil
 }
 
-// IsLockfile checks if a filename is a recognized lockfile.
+// IsLockfile checks if a filename is a recognised lockfile.
 func IsLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",

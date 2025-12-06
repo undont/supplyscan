@@ -1,5 +1,9 @@
 # supplyscan-mcp
 
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
+
 A Go-based MCP (Model Context Protocol) server that scans JavaScript ecosystem lockfiles for supply chain compromises and known vulnerabilities.
 
 Being implemented in Go rather than as an npm package makes it immune to npm supply chain attacks by design.
@@ -180,6 +184,9 @@ supplyscan-mcp --cli scan .
 # Scan specific path recursively
 supplyscan-mcp --cli scan /path/to/monorepo --recursive
 
+# Scan production dependencies only (exclude devDependencies)
+supplyscan-mcp --cli scan . --no-dev
+
 # Check a specific package
 supplyscan-mcp --cli check lodash 4.17.20
 
@@ -213,3 +220,7 @@ make lint
 # Build Docker image
 make docker
 ```
+
+## License
+
+[MIT](LICENSE)

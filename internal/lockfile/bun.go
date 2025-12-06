@@ -34,8 +34,8 @@ type bunLockfileJSON struct {
 	Packages        map[string][]json.RawMessage `json:"packages"`
 }
 
-// ParseBun parses a bun.lock file.
-func ParseBun(path string) (Lockfile, error) {
+// parseBun parses a bun.lock file.
+func parseBun(path string) (Lockfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
