@@ -35,12 +35,16 @@ No installation required - just configure your MCP client and Docker pulls the i
 
 Skip to [Configuration](#configuration).
 
-### Alternative: Go Install
+### Alternative: Build from Source
 
 If you prefer a native binary and have Go 1.23+ installed:
 
 ```bash
-go install github.com/seanhalberthal/supplyscan-mcp/cmd/supplyscan-mcp@latest
+git clone https://github.com/seanhalberthal/supplyscan-mcp.git
+cd supplyscan-mcp
+go build -o supplyscan-mcp ./cmd
+# Optionally move to PATH
+mv supplyscan-mcp /usr/local/bin/
 ```
 
 ### Alternative: Download Binary

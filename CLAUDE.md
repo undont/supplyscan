@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build the binary
-go build -o supplyscan-mcp ./cmd/supplyscan-mcp
+go build -o supplyscan-mcp ./cmd
 
 # Run as MCP server (default, communicates via stdio)
 ./supplyscan-mcp
@@ -30,7 +30,7 @@ docker build -t supplyscan-mcp .
 
 ## Architecture
 
-### Entry Point (`cmd/supplyscan-mcp/main.go`)
+### Entry Point (`cmd/main.go`)
 
 Implements two operational modes via a `--cli` flag:
 - **MCP server mode** (default): Communicates via stdio using the official Go MCP SDK

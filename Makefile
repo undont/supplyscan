@@ -6,16 +6,16 @@ LDFLAGS := -ldflags="-s -w -X github.com/seanhalberthal/supplyscan-mcp/internal/
 
 # Build for current platform
 build:
-	go build $(LDFLAGS) -o $(BINARY) ./cmd/supplyscan-mcp
+	go build $(LDFLAGS) -o $(BINARY) ./cmd
 
 # Cross-compile for all platforms
 build-all: clean
 	@mkdir -p dist
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd/supplyscan-mcp
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd/supplyscan-mcp
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-amd64 ./cmd/supplyscan-mcp
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-arm64 ./cmd/supplyscan-mcp
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd/supplyscan-mcp
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-amd64 ./cmd
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-arm64 ./cmd
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd
 
 # Run tests
 test:
@@ -40,7 +40,7 @@ docker:
 
 # Install to $GOPATH/bin
 install:
-	go install $(LDFLAGS) ./cmd/supplyscan-mcp
+	go install $(LDFLAGS) ./cmd
 
 # Format Go code
 fmt:
