@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6](https://github.com/seanhalberthal/supplyscan-mcp/compare/v1.0.5...v1.0.6) (2025-12-07)
+
+
+### Bug Fixes
+
+* trigger release job when release-please creates a release ([e260af9](https://github.com/seanhalberthal/supplyscan-mcp/commit/e260af995a43c4c23882c265d8a0ac177b311c47))
+
 ## [1.0.5](https://github.com/seanhalberthal/supplyscan-mcp/compare/v1.0.4...v1.0.5) (2025-12-07)
 
 
