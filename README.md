@@ -64,7 +64,7 @@ curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/downloa
 
 ## Configuration
 
-### Claude Desktop (Docker)
+### Claude Desktop / Claude Code (Docker)
 
 Add to `claude_desktop_config.json`:
 
@@ -112,7 +112,7 @@ These IDEs support workspace variables, which makes configuration simpler:
 
 The workspace folder is mounted at the same path inside the container, so paths work naturally.
 
-### Claude Desktop (Binary)
+### Claude Desktop / Claude Code (Binary)
 
 If using `go install` or a downloaded binary:
 
