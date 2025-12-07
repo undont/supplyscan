@@ -102,7 +102,10 @@ func handleStatus(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[st
 		},
 	}
 
-	return &mcp.CallToolResultFor[statusOutput]{StructuredContent: status}, nil
+	return &mcp.CallToolResultFor[statusOutput]{
+		Content:           []mcp.Content{},
+		StructuredContent: status,
+	}, nil
 }
 
 func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[scanInput]) (*mcp.CallToolResultFor[scanOutput], error) {
@@ -120,7 +123,10 @@ func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolPar
 		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[scanOutput]{StructuredContent: scanOutput{ScanResult: *result}}, nil
+	return &mcp.CallToolResultFor[scanOutput]{
+		Content:           []mcp.Content{},
+		StructuredContent: scanOutput{ScanResult: *result},
+	}, nil
 }
 
 func handleCheck(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[checkInput]) (*mcp.CallToolResultFor[checkOutput], error) {
@@ -137,7 +143,10 @@ func handleCheck(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolPa
 		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[checkOutput]{StructuredContent: checkOutput{CheckResult: *result}}, nil
+	return &mcp.CallToolResultFor[checkOutput]{
+		Content:           []mcp.Content{},
+		StructuredContent: checkOutput{CheckResult: *result},
+	}, nil
 }
 
 func handleRefresh(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[refreshInput]) (*mcp.CallToolResultFor[refreshOutput], error) {
@@ -146,5 +155,8 @@ func handleRefresh(_ context.Context, _ *mcp.ServerSession, params *mcp.CallTool
 		return &mcp.CallToolResultFor[refreshOutput]{IsError: true}, err
 	}
 
-	return &mcp.CallToolResultFor[refreshOutput]{StructuredContent: refreshOutput{RefreshResult: *result}}, nil
+	return &mcp.CallToolResultFor[refreshOutput]{
+		Content:           []mcp.Content{},
+		StructuredContent: refreshOutput{RefreshResult: *result},
+	}, nil
 }

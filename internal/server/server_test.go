@@ -12,6 +12,12 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
+// getStructuredContent returns the StructuredContent from a result.
+func getStructuredContent[T any](t *testing.T, result *mcp.CallToolResultFor[T]) T {
+	t.Helper()
+	return result.StructuredContent
+}
+
 // setupTestScanner initialises the package-level scan variable for testing.
 func setupTestScanner(t *testing.T) {
 	t.Helper()
@@ -58,7 +64,7 @@ func TestHandleStatus(t *testing.T) {
 	}
 
 	// Verify status response structure
-	status := result.StructuredContent
+	status := getStructuredContent(t, result)
 	if status.Version != types.Version {
 		t.Errorf("Version = %q, want %q", status.Version, types.Version)
 	}
@@ -100,7 +106,7 @@ func TestHandleScan_ValidPath(t *testing.T) {
 		t.Error("handleScan() returned IsError = true")
 	}
 
-	scanResult := result.StructuredContent
+	scanResult := getStructuredContent(t, result)
 	if scanResult.Summary.LockfilesScanned != 1 {
 		t.Errorf("LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
@@ -179,8 +185,9 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 		t.Fatalf("handleScan() error = %v", err)
 	}
 
-	if result.StructuredContent.Summary.LockfilesScanned != 1 {
-		t.Errorf("Non-recursive: LockfilesScanned = %d, want 1", result.StructuredContent.Summary.LockfilesScanned)
+	scanResult := getStructuredContent(t, result)
+	if scanResult.Summary.LockfilesScanned != 1 {
+		t.Errorf("Non-recursive: LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
 
 	// Recursive scan
@@ -190,8 +197,9 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 		t.Fatalf("handleScan() recursive error = %v", err)
 	}
 
-	if result.StructuredContent.Summary.LockfilesScanned != 2 {
-		t.Errorf("Recursive: LockfilesScanned = %d, want 2", result.StructuredContent.Summary.LockfilesScanned)
+	recursiveResult := getStructuredContent(t, result)
+	if recursiveResult.Summary.LockfilesScanned != 2 {
+		t.Errorf("Recursive: LockfilesScanned = %d, want 2", recursiveResult.Summary.LockfilesScanned)
 	}
 }
 
@@ -214,7 +222,7 @@ func TestHandleCheck_ValidPackage(t *testing.T) {
 		t.Error("handleCheck() returned IsError = true")
 	}
 
-	checkResult := result.StructuredContent
+	checkResult := getStructuredContent(t, result)
 	// lodash 4.17.21 is not a compromised package
 	if checkResult.SupplyChain.Compromised {
 		t.Error("Expected lodash@4.17.21 to not be compromised")
@@ -309,7 +317,7 @@ func TestHandleRefresh(t *testing.T) {
 		t.Error("handleRefresh() returned IsError = true")
 	}
 
-	refreshResult := result.StructuredContent
+	refreshResult := getStructuredContent(t, result)
 	// PackagesCount and VersionsCount should be >= 0
 	if refreshResult.PackagesCount < 0 {
 		t.Errorf("PackagesCount = %d, want >= 0", refreshResult.PackagesCount)
