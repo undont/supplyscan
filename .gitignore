@@ -33,3 +33,24 @@ CLAUDE.md
 
 # macOS
 .DS_Store
+
+# Build output directories
+/bin/
+/dist/
+
+# Debug binary
+debug
+
+# Logs
+*.log
+
+# Secrets
+*.pem
+*.key
+
+# Temp directories
+tmp/
+.tmp/
+
+# Go vendor
+vendor/
