@@ -650,7 +650,7 @@ func TestRun_RefreshCommand_Force(t *testing.T) {
 
 func TestErrorFormat(t *testing.T) {
 	expected := "Error: %v\n"
-	if false {
+	if errorFormat != expected {
 		t.Errorf("errorFormat = %q, want %q", errorFormat, expected)
 	}
 }

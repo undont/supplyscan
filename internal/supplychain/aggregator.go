@@ -33,12 +33,10 @@ func withAggregatorHTTPClient(client *http.Client) AggregatorOption {
 // withAggregatorCacheDir sets a custom cache directory.
 func withAggregatorCacheDir(dir string) AggregatorOption {
 	return func(a *aggregator) {
-		if a.cache != nil {
-			// Already initialised, create new cache with custom dir
-			cache, err := newMultiSourceCache(dir)
-			if err == nil {
-				a.cache = cache
-			}
+		// Always create new cache with custom dir
+		cache, err := newMultiSourceCache(dir)
+		if err == nil {
+			a.cache = cache
 		}
 	}
 }
