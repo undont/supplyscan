@@ -379,11 +379,11 @@ func TestOutputTypes(t *testing.T) {
 	// statusOutput embeds StatusResponse
 	so := statusOutput{
 		StatusResponse: types.StatusResponse{
-			Version: "1.0.0",
+			Version: types.Version,
 		},
 	}
-	if so.Version != "1.0.0" {
-		t.Errorf("statusOutput.Version = %q, want 1.0.0", so.Version)
+	if so.Version != types.Version {
+		t.Errorf("statusOutput.Version = %q, want %s", so.Version, types.Version)
 	}
 
 	// scanOutput embeds ScanResult

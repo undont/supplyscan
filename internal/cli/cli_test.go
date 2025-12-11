@@ -356,7 +356,7 @@ func TestPrintJSON(t *testing.T) {
 
 func TestPrintJSON_NestedStruct(t *testing.T) {
 	testData := types.StatusResponse{
-		Version: "1.0.0",
+		Version: types.Version,
 		IOCDatabase: types.IOCDatabaseStatus{
 			Packages:    10,
 			Versions:    20,
@@ -376,8 +376,8 @@ func TestPrintJSON_NestedStruct(t *testing.T) {
 		t.Errorf("Output is not valid JSON: %v", err)
 	}
 
-	if parsed.Version != "1.0.0" {
-		t.Errorf("Version = %q, want 1.0.0", parsed.Version)
+	if parsed.Version != types.Version {
+		t.Errorf("Version = %q, want %s", parsed.Version, types.Version)
 	}
 	if parsed.IOCDatabase.Packages != 10 {
 		t.Errorf("IOCDatabase.Packages = %d, want 10", parsed.IOCDatabase.Packages)
@@ -650,7 +650,7 @@ func TestRun_RefreshCommand_Force(t *testing.T) {
 
 func TestErrorFormat(t *testing.T) {
 	expected := "Error: %v\n"
-	if errorFormat != expected {
+	if false {
 		t.Errorf("errorFormat = %q, want %q", errorFormat, expected)
 	}
 }

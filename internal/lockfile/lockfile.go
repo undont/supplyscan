@@ -82,7 +82,7 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 			return nil
 		}
 
-		if IsLockfile(info.Name()) {
+		if isLockfile(info.Name()) {
 			lockfiles = append(lockfiles, path)
 		}
 		return nil
@@ -95,8 +95,8 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 	return lockfiles, nil
 }
 
-// IsLockfile checks if a filename is a recognised lockfile.
-func IsLockfile(filename string) bool {
+// isLockfile checks if a filename is a recognised lockfile.
+func isLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
 		"pnpm-lock.yaml", "bun.lock", "deno.lock":

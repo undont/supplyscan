@@ -33,7 +33,7 @@ func TestIsLockfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filename, func(t *testing.T) {
-			if got := IsLockfile(tt.filename); got != tt.want {
+			if got := isLockfile(tt.filename); got != tt.want {
 				t.Errorf("IsLockfile(%q) = %v, want %v", tt.filename, got, tt.want)
 			}
 		})

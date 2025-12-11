@@ -130,6 +130,7 @@ func runRefresh(scan *scanner.Scanner, force bool) {
 func printJSON(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
 		log.Fatal(err)
 	}

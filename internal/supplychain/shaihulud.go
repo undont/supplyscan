@@ -1,98 +1,100 @@
 package supplychain
 
 import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/seanhalberthal/supplyscan-mcp/internal/supplychain/sources"
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
 // Detector checks packages against the IOC database.
 type Detector struct {
-	cache *IOCCache
-	db    *types.IOCDatabase
+	aggregator *aggregator
 }
 
 // DetectorOption configures a Detector.
 type DetectorOption func(*detectorConfig)
 
 type detectorConfig struct {
-	cacheOpts []CacheOption
+	httpClient *http.Client
+	cacheDir   string
+	sources    []IOCSource
 }
 
-// WithCacheOptions passes options to the underlying IOCCache.
-func WithCacheOptions(opts ...CacheOption) DetectorOption {
+// withDetectorCacheDir sets a custom cache directory.
+func withDetectorCacheDir(dir string) DetectorOption {
 	return func(cfg *detectorConfig) {
-		cfg.cacheOpts = append(cfg.cacheOpts, opts...)
+		cfg.cacheDir = dir
 	}
 }
 
-// NewDetector creates a new supply chain detector.
+// withDetectorSources sets custom IOC sources.
+func withDetectorSources(srcs ...IOCSource) DetectorOption {
+	return func(cfg *detectorConfig) {
+		cfg.sources = srcs
+	}
+}
+
+// NewDetector creates a new supply chain detector with multi-source support.
 func NewDetector(opts ...DetectorOption) (*Detector, error) {
 	cfg := &detectorConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	cache, err := newIOCCache(cfg.cacheOpts...)
+	// Default sources: DataDog + GitHub Advisory
+	iocSources := cfg.sources
+	if len(iocSources) == 0 {
+		iocSources = []IOCSource{
+			sources.NewDataDogSource(),
+			sources.NewGitHubAdvisorySource(),
+		}
+	}
+
+	// Create aggregator options
+	var aggOpts []AggregatorOption
+	if cfg.httpClient != nil {
+		aggOpts = append(aggOpts, withAggregatorHTTPClient(cfg.httpClient))
+	}
+	if cfg.cacheDir != "" {
+		aggOpts = append(aggOpts, withAggregatorCacheDir(cfg.cacheDir))
+	}
+
+	agg, err := newAggregator(iocSources, aggOpts...)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Detector{cache: cache}, nil
+	return &Detector{aggregator: agg}, nil
 }
 
 // EnsureLoaded loads the IOC database, refreshing if needed.
 func (d *Detector) EnsureLoaded() error {
-	if d.db != nil {
-		return nil
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	// Try to load from cache
-	db, err := d.cache.Load()
-	if err != nil {
-		return err
-	}
-
-	if db == nil || d.cache.isStale() {
-		// Refresh the cache
-		_, err := d.cache.refresh(false)
-		if err != nil {
-			// If refresh fails but we have stale data, use it
-			if db != nil {
-				d.db = db
-				return nil
-			}
-			return err
-		}
-
-		// Reload after refresh
-		db, err = d.cache.Load()
-		if err != nil {
-			return err
-		}
-	}
-
-	d.db = db
-	return nil
+	return d.aggregator.ensureLoaded(ctx)
 }
 
 // Refresh forces a refresh of the IOC database.
 func (d *Detector) Refresh(force bool) (*types.RefreshResult, error) {
-	result, err := d.cache.refresh(force)
-	if err != nil {
-		return nil, err
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	// Reload database after refresh
-	d.db, _ = d.cache.Load()
-	return result, nil
+	return d.aggregator.refresh(ctx, force)
 }
 
 // CheckPackage checks a single package for supply chain compromise.
 func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding {
-	if d.db == nil {
+	db := d.aggregator.getDatabase()
+
+	if db == nil {
 		return nil
 	}
 
-	pkg, exists := d.db.Packages[name]
+	pkg, exists := db.Packages[name]
 	if !exists {
 		return nil
 	}
@@ -100,13 +102,22 @@ func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding 
 	// Check if this version is compromised
 	for _, v := range pkg.Versions {
 		if v == version {
+			// Determine finding type based on campaigns
+			findingType := "supply_chain_compromise"
+			if len(pkg.Campaigns) > 0 {
+				findingType = pkg.Campaigns[0] // Use first campaign as type
+			}
+
 			return &types.SupplyChainFinding{
 				Severity:            "critical",
-				Type:                "shai_hulud_v2",
+				Type:                findingType,
 				Package:             name,
 				InstalledVersion:    version,
 				CompromisedVersions: pkg.Versions,
 				Action:              "Update immediately and rotate any exposed credentials",
+				Campaigns:           pkg.Campaigns,
+				AdvisoryIDs:         pkg.AdvisoryIDs,
+				Sources:             pkg.Sources,
 			}
 		}
 	}
@@ -120,9 +131,11 @@ func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarnin
 		return nil
 	}
 
+	db := d.aggregator.getDatabase()
+
 	// Only warn if the package isn't already known to be compromised
-	if d.db != nil {
-		if pkg, exists := d.db.Packages[name]; exists {
+	if db != nil {
+		if pkg, exists := db.Packages[name]; exists {
 			for _, v := range pkg.Versions {
 				if v == version {
 					return nil // Already reported as finding
@@ -162,25 +175,5 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 
 // GetStatus returns the current IOC database status.
 func (d *Detector) GetStatus() types.IOCDatabaseStatus {
-	meta, _ := d.cache.loadMeta()
-	if meta == nil {
-		return types.IOCDatabaseStatus{
-			Packages:    0,
-			Versions:    0,
-			LastUpdated: "not loaded",
-			Sources:     []string{},
-		}
-	}
-
-	sources := []string{"datadog"}
-	if d.db != nil {
-		sources = d.db.Sources
-	}
-
-	return types.IOCDatabaseStatus{
-		Packages:    meta.PackageCount,
-		Versions:    meta.VersionCount,
-		LastUpdated: meta.LastUpdated,
-		Sources:     sources,
-	}
+	return d.aggregator.getStatus()
 }

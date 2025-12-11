@@ -22,8 +22,8 @@ func TestNewClient(t *testing.T) {
 	if client.httpClient == nil {
 		t.Error("httpClient is nil")
 	}
-	if client.endpoint != DefaultEndpoint {
-		t.Errorf("endpoint = %q, want %q", client.endpoint, DefaultEndpoint)
+	if client.endpoint != defaultEndpoint {
+		t.Errorf("endpoint = %q, want %q", client.endpoint, defaultEndpoint)
 	}
 }
 
@@ -32,8 +32,8 @@ func TestNewClient_WithOptions(t *testing.T) {
 	customEndpoint := "https://custom.example.com/audit"
 
 	client := NewClient(
-		WithHTTPClient(customHTTP),
-		WithEndpoint(customEndpoint),
+		withHTTPClient(customHTTP),
+		withEndpoint(customEndpoint),
 	)
 
 	if client.httpClient != customHTTP {
@@ -286,8 +286,8 @@ func TestAuditDependencies_MockServer(t *testing.T) {
 
 	// Create client with mock server endpoint
 	client := NewClient(
-		WithHTTPClient(server.Client()),
-		WithEndpoint(server.URL),
+		withHTTPClient(server.Client()),
+		withEndpoint(server.URL),
 	)
 
 	deps := []types.Dependency{
@@ -339,8 +339,8 @@ func TestAuditDependencies_ServerError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		WithHTTPClient(server.Client()),
-		WithEndpoint(server.URL),
+		withHTTPClient(server.Client()),
+		withEndpoint(server.URL),
 	)
 
 	deps := []types.Dependency{
@@ -361,8 +361,8 @@ func TestAuditDependencies_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		WithHTTPClient(server.Client()),
-		WithEndpoint(server.URL),
+		withHTTPClient(server.Client()),
+		withEndpoint(server.URL),
 	)
 
 	deps := []types.Dependency{
@@ -403,8 +403,8 @@ func TestAuditSinglePackage_MockServer(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		WithHTTPClient(server.Client()),
-		WithEndpoint(server.URL),
+		withHTTPClient(server.Client()),
+		withEndpoint(server.URL),
 	)
 
 	vulns, err := client.AuditSinglePackage("lodash", "4.17.20")
@@ -445,8 +445,8 @@ func TestAuditSinglePackage_NoVulnerabilities(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		WithHTTPClient(server.Client()),
-		WithEndpoint(server.URL),
+		withHTTPClient(server.Client()),
+		withEndpoint(server.URL),
 	)
 
 	vulns, err := client.AuditSinglePackage("safe-pkg", "1.0.0")
