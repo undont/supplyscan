@@ -6,6 +6,12 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.2.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -151,7 +157,7 @@ jobs:
           install-mode: goinstall
 
   build-binaries:
-    needs: [check-skip, test, lint]
+    needs: [check-skip, test, lint, version]
     if: |
       always() &&
       needs.check-skip.outputs.should_skip != 'true' &&
@@ -160,7 +166,9 @@ jobs:
           (needs.test.result == 'success' || needs.test.result == 'skipped') &&
           (needs.lint.result == 'success' || needs.lint.result == 'skipped')
         ) ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.should_release == 'true') ||
+        (github.event_name == 'workflow_dispatch')
       )
     runs-on: ubuntu-latest
     strategy:
@@ -187,8 +195,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          elif [[ "${{ needs.version.outputs.new_tag }}" != "" ]]; then
+            echo "version=${{ needs.version.outputs.new_tag }}" | sed 's/^v/version=/' >> $GITHUB_OUTPUT
           else
             echo "version=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
@@ -223,7 +235,7 @@ jobs:
           fi
 
   docker:
-    needs: [check-skip, test, lint]
+    needs: [check-skip, test, lint, version]
     if: |
       always() &&
       needs.check-skip.outputs.should_skip != 'true' &&
@@ -232,7 +244,9 @@ jobs:
           (needs.test.result == 'success' || needs.test.result == 'skipped') &&
           (needs.lint.result == 'success' || needs.lint.result == 'skipped')
         ) ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.should_release == 'true') ||
+        (github.event_name == 'workflow_dispatch')
       )
     runs-on: ubuntu-latest
     steps:
@@ -242,7 +256,10 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: |
+          startsWith(github.ref, 'refs/tags/v') ||
+          needs.version.outputs.should_release == 'true' ||
+          github.event_name == 'workflow_dispatch'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -252,10 +269,19 @@ jobs:
       - name: Get version for Docker
         id: docker_version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ inputs.tag }}" | sed 's/^v/version=/' >> $GITHUB_OUTPUT
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "${{ needs.version.outputs.new_tag }}" != "" ]]; then
+            TAG="${{ needs.version.outputs.new_tag }}"
+            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
           else
             echo "version=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "tag=" >> $GITHUB_OUTPUT
           fi
 
       - name: Docker meta
@@ -264,10 +290,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.docker_version.outputs.tag }},enable=${{ steps.docker_version.outputs.tag != '' }}
+            type=raw,value=latest,enable=${{ steps.docker_version.outputs.tag != '' }}
+            type=ref,event=branch,enable=${{ steps.docker_version.outputs.tag == '' }}
             type=sha
 
       - name: Build and push
@@ -275,7 +300,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          push: ${{ steps.docker_version.outputs.tag != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ steps.docker_version.outputs.version }}
@@ -283,11 +308,30 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-binaries, docker]
+    needs: [build-binaries, docker, version]
+    if: |
+      always() &&
+      needs.build-binaries.result == 'success' &&
+      needs.docker.result == 'success' &&
+      (
+        startsWith(github.ref, 'refs/tags/v') ||
+        needs.version.outputs.should_release == 'true' ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Get release tag
+        id: release_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ needs.version.outputs.new_tag }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download all artefacts
         uses: actions/download-artifact@v4
@@ -300,5 +344,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.ref_name }}"
-          gh release create "$TAG" dist/* --title "$TAG" --generate-notes
+          TAG="${{ steps.release_tag.outputs.tag }}"
+          # Check if release already exists
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, uploading assets"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --generate-notes
+          fi
