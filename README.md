@@ -68,9 +68,9 @@ curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/downloa
 
 ## Configuration
 
-### Claude Desktop / Claude Code (Docker)
+### Claude Code / OpenCode (Docker)
 
-Add to `claude_desktop_config.json`:
+Add to `~/.claude.json`:
 
 ```json
 {
@@ -79,6 +79,7 @@ Add to `claude_desktop_config.json`:
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
+        "--pull", "always",
         "-v", "/Users/you:/Users/you:ro",
         "ghcr.io/seanhalberthal/supplyscan-mcp:latest"
       ]
@@ -88,6 +89,8 @@ Add to `claude_desktop_config.json`:
 ```
 
 Replace `/Users/you` with your home directory path. The `-v` flag mounts it at the same path inside the container (read-only), so file paths work naturally.
+
+The `--pull always` flag ensures Docker checks for image updates on every invocation, so you always run the latest version.
 
 **Tighter access**: To limit access to a specific folder, mount it at the same path:
 
@@ -106,6 +109,7 @@ These IDEs support workspace variables, which makes configuration simpler:
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
+        "--pull", "always",
         "-v", "${workspaceFolder}:${workspaceFolder}:ro",
         "ghcr.io/seanhalberthal/supplyscan-mcp:latest"
       ]
@@ -171,19 +175,19 @@ The MCP server runs via stdio by default, but includes a CLI mode for standalone
 
 ```bash
 # Scan a directory
-docker run --rm -v /path/to/project:/scan:ro ghcr.io/seanhalberthal/supplyscan-mcp:latest \
-  --cli scan /scan
+docker run --rm --pull always -v /path/to/project:/scan:ro \
+  ghcr.io/seanhalberthal/supplyscan-mcp:latest --cli scan /scan
 
 # Check a specific package
-docker run --rm ghcr.io/seanhalberthal/supplyscan-mcp:latest \
+docker run --rm --pull always ghcr.io/seanhalberthal/supplyscan-mcp:latest \
   --cli check lodash 4.17.20
 
 # Refresh IOC database
-docker run --rm ghcr.io/seanhalberthal/supplyscan-mcp:latest \
+docker run --rm --pull always ghcr.io/seanhalberthal/supplyscan-mcp:latest \
   --cli refresh
 
 # Show status
-docker run --rm ghcr.io/seanhalberthal/supplyscan-mcp:latest \
+docker run --rm --pull always ghcr.io/seanhalberthal/supplyscan-mcp:latest \
   --cli status
 ```
 
