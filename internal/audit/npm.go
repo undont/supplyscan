@@ -12,8 +12,8 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
-// DefaultEndpoint is the npm registry audit endpoint.
-const DefaultEndpoint = "https://registry.npmjs.org/-/npm/v1/security/audits"
+// defaultEndpoint is the npm registry audit endpoint.
+const defaultEndpoint = "https://registry.npmjs.org/-/npm/v1/security/audits"
 
 // Client handles npm audit API requests.
 type Client struct {
@@ -24,15 +24,15 @@ type Client struct {
 // Option configures a Client.
 type Option func(*Client)
 
-// WithHTTPClient sets a custom HTTP client.
-func WithHTTPClient(c *http.Client) Option {
+// withHTTPClient sets a custom HTTP client.
+func withHTTPClient(c *http.Client) Option {
 	return func(client *Client) {
 		client.httpClient = c
 	}
 }
 
-// WithEndpoint sets a custom audit endpoint.
-func WithEndpoint(endpoint string) Option {
+// withEndpoint sets a custom audit endpoint.
+func withEndpoint(endpoint string) Option {
 	return func(client *Client) {
 		client.endpoint = endpoint
 	}
@@ -42,7 +42,7 @@ func WithEndpoint(endpoint string) Option {
 func NewClient(opts ...Option) *Client {
 	c := &Client{
 		httpClient: &http.Client{},
-		endpoint:   DefaultEndpoint,
+		endpoint:   defaultEndpoint,
 	}
 	for _, opt := range opts {
 		opt(c)

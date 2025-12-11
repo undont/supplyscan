@@ -1,11 +1,8 @@
 package supplychain
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,43 +10,96 @@ import (
 	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
 )
 
+// mockTestSource implements IOCSource for testing
+type mockTestSource struct {
+	name     string
+	cacheTTL time.Duration
+	data     *types.SourceData
+}
+
+func (m *mockTestSource) Name() string {
+	return m.name
+}
+
+func (m *mockTestSource) CacheTTL() time.Duration {
+	return m.cacheTTL
+}
+
+func (m *mockTestSource) Fetch(_ context.Context, _ *http.Client) (*types.SourceData, error) {
+	return m.data, nil
+}
+
 // Test helpers
 func createTestIOCDatabase() *types.IOCDatabase {
 	return &types.IOCDatabase{
 		Packages: map[string]types.CompromisedPackage{
 			"malicious-pkg": {
-				Name:     "malicious-pkg",
-				Versions: []string{"1.0.0", "1.0.1", "1.0.2"},
-				Sources:  []string{"datadog"},
-				Campaign: "shai-hulud-v2",
+				Name:      "malicious-pkg",
+				Versions:  []string{"1.0.0", "1.0.1", "1.0.2"},
+				Sources:   []string{"test-source"},
+				Campaigns: []string{"shai_hulud_v2"},
 			},
 			"@evil/package": {
-				Name:     "@evil/package",
-				Versions: []string{"2.0.0"},
-				Sources:  []string{"datadog"},
-				Campaign: "shai-hulud-v2",
+				Name:      "@evil/package",
+				Versions:  []string{"2.0.0"},
+				Sources:   []string{"test-source"},
+				Campaigns: []string{"shai_hulud_v2"},
 			},
 			"@ctrl/tinycolor": {
-				Name:     "@ctrl/tinycolor",
-				Versions: []string{"3.4.1"},
-				Sources:  []string{"datadog"},
-				Campaign: "shai-hulud-v2",
+				Name:      "@ctrl/tinycolor",
+				Versions:  []string{"3.4.1"},
+				Sources:   []string{"test-source"},
+				Campaigns: []string{"shai_hulud_v2"},
 			},
 		},
 		LastUpdated: time.Now().UTC().Format(time.RFC3339),
-		Sources:     []string{"datadog"},
+		Sources:     []string{"test-source"},
 	}
 }
 
-func setupTestCache(t *testing.T) (*IOCCache, string) {
+// createTestDetectorWithDB creates a detector with a pre-loaded database for testing.
+func createTestDetectorWithDB(t *testing.T, db *types.IOCDatabase) *Detector {
 	t.Helper()
-	tmpDir := t.TempDir()
 
-	cache, err := newIOCCache(WithCacheDir(tmpDir))
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
+	// Convert IOCDatabase packages to SourceData packages
+	sourcePackages := make(map[string]types.SourcePackage)
+	for name := range db.Packages {
+		pkg := db.Packages[name]
+		sourcePackages[name] = types.SourcePackage{
+			Name:       pkg.Name,
+			Versions:   pkg.Versions,
+			AdvisoryID: "",
+			Severity:   "critical",
+		}
 	}
-	return cache, tmpDir
+
+	sourceData := &types.SourceData{
+		Source:    "test-source",
+		Campaign:  "shai_hulud_v2",
+		Packages:  sourcePackages,
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	mockSource := &mockTestSource{
+		name:     "test-source",
+		cacheTTL: time.Hour,
+		data:     sourceData,
+	}
+
+	detector, err := NewDetector(
+		withDetectorCacheDir(t.TempDir()),
+		withDetectorSources(mockSource),
+	)
+	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+
+	// Load the database
+	if err := detector.EnsureLoaded(); err != nil {
+		t.Fatalf("EnsureLoaded() error = %v", err)
+	}
+
+	return detector
 }
 
 // Namespace tests
@@ -104,9 +154,7 @@ func TestGetNamespaceWarning(t *testing.T) {
 
 // Detector tests
 func TestDetector_CheckPackage_Compromised(t *testing.T) {
-	detector := &Detector{
-		db: createTestIOCDatabase(),
-	}
+	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	tests := []struct {
 		name    string
@@ -146,8 +194,22 @@ func TestDetector_CheckPackage_Compromised(t *testing.T) {
 }
 
 func TestDetector_CheckPackage_NilDatabase(t *testing.T) {
-	detector := &Detector{db: nil}
+	// Create detector with a source that returns nil data
+	emptySource := &mockTestSource{
+		name:     "empty",
+		cacheTTL: time.Hour,
+		data:     nil,
+	}
 
+	detector, err := NewDetector(
+		withDetectorCacheDir(t.TempDir()),
+		withDetectorSources(emptySource),
+	)
+	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+
+	// Don't call EnsureLoaded - database should be nil
 	finding := detector.CheckPackage("any-package", "1.0.0")
 	if finding != nil {
 		t.Error("Expected nil finding when database is nil")
@@ -155,9 +217,7 @@ func TestDetector_CheckPackage_NilDatabase(t *testing.T) {
 }
 
 func TestDetector_CheckNamespace(t *testing.T) {
-	detector := &Detector{
-		db: createTestIOCDatabase(),
-	}
+	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	tests := []struct {
 		name    string
@@ -197,9 +257,7 @@ func TestDetector_CheckNamespace(t *testing.T) {
 }
 
 func TestDetector_CheckDependencies(t *testing.T) {
-	detector := &Detector{
-		db: createTestIOCDatabase(),
-	}
+	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	deps := []types.Dependency{
 		{Name: "malicious-pkg", Version: "1.0.0"},   // Compromised
@@ -247,9 +305,7 @@ func TestDetector_CheckDependencies(t *testing.T) {
 }
 
 func TestDetector_CheckDependencies_Empty(t *testing.T) {
-	detector := &Detector{
-		db: createTestIOCDatabase(),
-	}
+	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	findings, warnings := detector.CheckDependencies([]types.Dependency{})
 
@@ -261,362 +317,19 @@ func TestDetector_CheckDependencies_Empty(t *testing.T) {
 	}
 }
 
-func TestDetector_GetStatus_NoCache(t *testing.T) {
-	cache, _ := setupTestCache(t)
-	detector := &Detector{cache: cache}
+func TestDetector_GetStatus(t *testing.T) {
+	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	status := detector.GetStatus()
 
-	if status.Packages != 0 {
-		t.Errorf("Packages = %d, want 0", status.Packages)
-	}
-	if status.LastUpdated != "not loaded" {
-		t.Errorf("LastUpdated = %q, want 'not loaded'", status.LastUpdated)
-	}
-}
-
-func TestDetector_GetStatus_WithCache(t *testing.T) {
-	cache, tmpDir := setupTestCache(t)
-
-	// Create meta file
-	meta := &types.IOCMeta{
-		LastUpdated:  time.Now().UTC().Format(time.RFC3339),
-		PackageCount: 42,
-		VersionCount: 100,
-	}
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	if err := os.WriteFile(filepath.Join(tmpDir, "meta.json"), metaData, 0600); err != nil {
-		t.Fatal(err)
+	// Should have loaded the test data
+	if status.Packages != 3 {
+		t.Errorf("Packages = %d, want 3", status.Packages)
 	}
 
-	detector := &Detector{cache: cache}
-	status := detector.GetStatus()
-
-	if status.Packages != 42 {
-		t.Errorf("Packages = %d, want 42", status.Packages)
-	}
-	if status.Versions != 100 {
-		t.Errorf("Versions = %d, want 100", status.Versions)
-	}
-}
-
-// IOC Cache tests
-func TestIOCCache_SaveAndLoad(t *testing.T) {
-	cache, _ := setupTestCache(t)
-	db := createTestIOCDatabase()
-
-	// Save
-	if err := cache.save(db); err != nil {
-		t.Fatalf("Save() error = %v", err)
-	}
-
-	// Load
-	loaded, err := cache.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	if loaded == nil {
-		t.Fatal("Load() returned nil")
-	}
-
-	if len(loaded.Packages) != len(db.Packages) {
-		t.Errorf("Loaded packages = %d, want %d", len(loaded.Packages), len(db.Packages))
-	}
-
-	// Check specific package
-	if pkg, ok := loaded.Packages["malicious-pkg"]; !ok {
-		t.Error("Expected malicious-pkg in loaded database")
-	} else if len(pkg.Versions) != 3 {
-		t.Errorf("malicious-pkg versions = %d, want 3", len(pkg.Versions))
-	}
-}
-
-func TestIOCCache_LoadNonexistent(t *testing.T) {
-	cache, _ := setupTestCache(t)
-
-	loaded, err := cache.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v (expected nil, nil for nonexistent)", err)
-	}
-	if loaded != nil {
-		t.Error("Load() should return nil for nonexistent cache")
-	}
-}
-
-func TestIOCCache_SaveAndLoadMeta(t *testing.T) {
-	cache, _ := setupTestCache(t)
-
-	meta := &types.IOCMeta{
-		LastUpdated:  time.Now().UTC().Format(time.RFC3339),
-		ETag:         "abc123",
-		PackageCount: 50,
-		VersionCount: 150,
-	}
-
-	// Save
-	if err := cache.saveMeta(meta); err != nil {
-		t.Fatalf("SaveMeta() error = %v", err)
-	}
-
-	// Load
-	loaded, err := cache.loadMeta()
-	if err != nil {
-		t.Fatalf("LoadMeta() error = %v", err)
-	}
-
-	if loaded == nil {
-		t.Fatal("LoadMeta() returned nil")
-	}
-
-	if loaded.PackageCount != 50 {
-		t.Errorf("PackageCount = %d, want 50", loaded.PackageCount)
-	}
-	if loaded.VersionCount != 150 {
-		t.Errorf("VersionCount = %d, want 150", loaded.VersionCount)
-	}
-	if loaded.ETag != "abc123" {
-		t.Errorf("ETag = %q, want abc123", loaded.ETag)
-	}
-}
-
-func TestIOCCache_IsStale(t *testing.T) {
-	cache, tmpDir := setupTestCache(t)
-
-	// No meta file - should be stale
-	if !cache.isStale() {
-		t.Error("IsStale() should return true when no meta file exists")
-	}
-
-	// Recent meta - should not be stale
-	meta := &types.IOCMeta{
-		LastUpdated: time.Now().UTC().Format(time.RFC3339),
-	}
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	if err := os.WriteFile(filepath.Join(tmpDir, "meta.json"), metaData, 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	if cache.isStale() {
-		t.Error("IsStale() should return false for recent cache")
-	}
-
-	// Old meta - should be stale
-	oldMeta := &types.IOCMeta{
-		LastUpdated: time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
-	}
-	oldMetaData, _ := json.MarshalIndent(oldMeta, "", "  ")
-	if err := os.WriteFile(filepath.Join(tmpDir, "meta.json"), oldMetaData, 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	if !cache.isStale() {
-		t.Error("IsStale() should return true for old cache (>6 hours)")
-	}
-}
-
-func TestIOCCache_CacheAgeHours(t *testing.T) {
-	cache, tmpDir := setupTestCache(t)
-
-	// No meta file
-	if age := cache.cacheAgeHours(); age != -1 {
-		t.Errorf("CacheAgeHours() = %d, want -1 for no meta", age)
-	}
-
-	// Create meta with known time
-	pastTime := time.Now().Add(-3 * time.Hour)
-	meta := &types.IOCMeta{
-		LastUpdated: pastTime.UTC().Format(time.RFC3339),
-	}
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	if err := os.WriteFile(filepath.Join(tmpDir, "meta.json"), metaData, 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	age := cache.cacheAgeHours()
-	// Allow some tolerance for test execution time
-	if age < 2 || age > 4 {
-		t.Errorf("CacheAgeHours() = %d, expected ~3", age)
-	}
-}
-
-// CSV parsing tests
-func TestParseIOCCSV(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-malicious-pkg,"1.0.0,1.0.1",datadog
-@evil/scoped,"2.0.0,2.0.1","datadog,other"
-single-version,3.0.0,datadog
-`
-
-	db, err := parseIOCCSV(strings.NewReader(csvData))
-	if err != nil {
-		t.Fatalf("parseIOCCSV() error = %v", err)
-	}
-
-	if len(db.Packages) != 3 {
-		t.Errorf("Packages count = %d, want 3", len(db.Packages))
-	}
-
-	// Check malicious-pkg
-	if pkg, ok := db.Packages["malicious-pkg"]; !ok {
-		t.Error("Expected malicious-pkg in database")
-	} else if len(pkg.Versions) != 2 {
-		t.Errorf("malicious-pkg versions = %d, want 2", len(pkg.Versions))
-	}
-
-	// Check scoped package
-	if pkg, ok := db.Packages["@evil/scoped"]; !ok {
-		t.Error("Expected @evil/scoped in database")
-	} else if len(pkg.Versions) != 2 {
-		t.Errorf("@evil/scoped versions = %d, want 2", len(pkg.Versions))
-	} else if len(pkg.Sources) != 2 {
-		t.Errorf("@evil/scoped sources = %d, want 2", len(pkg.Sources))
-	}
-}
-
-func TestParseIOCCSV_AlternativeHeaders(t *testing.T) {
-	// Test with alternative column names
-	csvData := `name,version,reporter
-alt-pkg,1.0.0,security-team
-`
-
-	db, err := parseIOCCSV(strings.NewReader(csvData))
-	if err != nil {
-		t.Fatalf("parseIOCCSV() error = %v", err)
-	}
-
-	if _, ok := db.Packages["alt-pkg"]; !ok {
-		t.Error("Expected alt-pkg in database with alternative headers")
-	}
-}
-
-func TestParseIOCCSV_InvalidHeader(t *testing.T) {
-	csvData := `invalid_col1,invalid_col2
-data1,data2
-`
-
-	_, err := parseIOCCSV(strings.NewReader(csvData))
-	if err == nil {
-		t.Error("Expected error for CSV with invalid headers")
-	}
-}
-
-func TestParseIOCCSV_Empty(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-`
-
-	db, err := parseIOCCSV(strings.NewReader(csvData))
-	if err != nil {
-		t.Fatalf("parseIOCCSV() error = %v", err)
-	}
-
-	if len(db.Packages) != 0 {
-		t.Errorf("Expected empty database, got %d packages", len(db.Packages))
-	}
-}
-
-func TestParseIOCCSV_MalformedRow(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-valid-pkg,1.0.0,datadog
-invalid
-another-valid,2.0.0,datadog
-`
-
-	db, err := parseIOCCSV(strings.NewReader(csvData))
-	if err != nil {
-		t.Fatalf("parseIOCCSV() error = %v", err)
-	}
-
-	// Should have 2 valid packages (malformed row skipped)
-	if len(db.Packages) != 2 {
-		t.Errorf("Expected 2 packages (malformed skipped), got %d", len(db.Packages))
-	}
-}
-
-func TestFindColumnIndex(t *testing.T) {
-	header := []string{"Name", "Version", "Source"}
-
-	tests := []struct {
-		names []string
-		want  int
-	}{
-		{[]string{"name"}, 0},
-		{[]string{"version"}, 1},
-		{[]string{"SOURCE"}, 2}, // Case insensitive
-		{[]string{"missing"}, -1},
-		{[]string{"unknown", "name"}, 0}, // Multiple possible names
-	}
-
-	for _, tt := range tests {
-		t.Run(strings.Join(tt.names, "|"), func(t *testing.T) {
-			if got := findColumnIndex(header, tt.names...); got != tt.want {
-				t.Errorf("findColumnIndex() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSplitAndTrim(t *testing.T) {
-	tests := []struct {
-		input string
-		want  int
-	}{
-		{"a,b,c", 3},
-		{"a, b, c", 3},
-		{"  a  ,  b  ,  c  ", 3},
-		{"single", 1},
-		{"", 0},
-		{",,,", 0},  // All empty after trim
-		{"a,,b", 2}, // Empty middle
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := splitAndTrim(tt.input)
-			if len(result) != tt.want {
-				t.Errorf("splitAndTrim(%q) = %v (len %d), want len %d", tt.input, result, len(result), tt.want)
-			}
-		})
-	}
-}
-
-// Integration test
-func TestDetector_EnsureLoaded_WithCache(t *testing.T) {
-	cache, tmpDir := setupTestCache(t)
-	db := createTestIOCDatabase()
-
-	// Save cache and meta
-	if err := cache.save(db); err != nil {
-		t.Fatal(err)
-	}
-
-	meta := &types.IOCMeta{
-		LastUpdated:  time.Now().UTC().Format(time.RFC3339),
-		PackageCount: len(db.Packages),
-		VersionCount: 6,
-	}
-	if err := cache.saveMeta(meta); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create detector with this cache
-	detector := &Detector{
-		cache: &IOCCache{cacheDir: tmpDir},
-	}
-
-	// EnsureLoaded should load from cache
-	if err := detector.EnsureLoaded(); err != nil {
-		t.Fatalf("EnsureLoaded() error = %v", err)
-	}
-
-	if detector.db == nil {
-		t.Fatal("EnsureLoaded() did not load database")
-	}
-
-	// Should be able to check packages now
-	finding := detector.CheckPackage("malicious-pkg", "1.0.0")
-	if finding == nil {
-		t.Error("Expected finding for malicious-pkg@1.0.0 after EnsureLoaded")
+	// Should have sources
+	if len(status.Sources) == 0 {
+		t.Error("Sources should not be empty")
 	}
 }
 
@@ -630,190 +343,71 @@ func TestAtRiskNamespaces_Coverage(t *testing.T) {
 	}
 }
 
-// Mock server tests for HTTP-dependent functions
-
-func TestIOCCache_FetchIOCs_MockServer(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-malicious-pkg,"1.0.0,1.0.1",datadog
-@evil/scoped,2.0.0,datadog
-`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(csvData))
-	}))
-	defer server.Close()
-
-	cache, err := newIOCCache(
-		WithCacheDir(t.TempDir()),
-		WithSourceURL(server.URL),
-		WithCacheHTTPClient(server.Client()),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
+func TestNewDetector_WithCustomSources(t *testing.T) {
+	sourceData := &types.SourceData{
+		Source:   "custom",
+		Campaign: "test-campaign",
+		Packages: map[string]types.SourcePackage{
+			"test-pkg": {
+				Name:     "test-pkg",
+				Versions: []string{"1.0.0"},
+				Severity: "critical",
+			},
+		},
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	db, err := cache.fetchIOCs()
-	if err != nil {
-		t.Fatalf("fetchIOCs() error = %v", err)
+	customSource := &mockTestSource{
+		name:     "custom",
+		cacheTTL: time.Hour,
+		data:     sourceData,
 	}
-
-	if len(db.Packages) != 2 {
-		t.Errorf("Expected 2 packages, got %d", len(db.Packages))
-	}
-
-	if _, ok := db.Packages["malicious-pkg"]; !ok {
-		t.Error("Expected malicious-pkg in database")
-	}
-}
-
-func TestIOCCache_FetchIOCs_ServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	cache, err := newIOCCache(
-		WithCacheDir(t.TempDir()),
-		WithSourceURL(server.URL),
-		WithCacheHTTPClient(server.Client()),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
-	}
-
-	_, err = cache.fetchIOCs()
-	if err == nil {
-		t.Error("Expected error for server error response")
-	}
-}
-
-func TestIOCCache_Refresh_MockServer(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-test-pkg,1.0.0,datadog
-`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(csvData))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	cache, err := newIOCCache(
-		WithCacheDir(tmpDir),
-		WithSourceURL(server.URL),
-		WithCacheHTTPClient(server.Client()),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
-	}
-
-	// Force refresh
-	result, err := cache.refresh(true)
-	if err != nil {
-		t.Fatalf("refresh() error = %v", err)
-	}
-
-	if !result.Updated {
-		t.Error("Expected Updated = true for force refresh")
-	}
-	if result.PackagesCount != 1 {
-		t.Errorf("Expected PackagesCount = 1, got %d", result.PackagesCount)
-	}
-	if result.CacheAgeHours != 0 {
-		t.Errorf("Expected CacheAgeHours = 0, got %d", result.CacheAgeHours)
-	}
-
-	// Verify cache was saved
-	db, err := cache.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if db == nil || len(db.Packages) != 1 {
-		t.Error("Cache was not saved correctly")
-	}
-}
-
-func TestIOCCache_Refresh_NotStale(t *testing.T) {
-	tmpDir := t.TempDir()
-	cache, err := newIOCCache(WithCacheDir(tmpDir))
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
-	}
-
-	// Create recent meta to make cache not stale
-	meta := &types.IOCMeta{
-		LastUpdated:  time.Now().UTC().Format(time.RFC3339),
-		PackageCount: 5,
-		VersionCount: 10,
-	}
-	if err := cache.saveMeta(meta); err != nil {
-		t.Fatal(err)
-	}
-
-	// Non-force refresh should return without fetching
-	result, err := cache.refresh(false)
-	if err != nil {
-		t.Fatalf("refresh() error = %v", err)
-	}
-
-	if result.Updated {
-		t.Error("Expected Updated = false for fresh cache")
-	}
-	if result.PackagesCount != 5 {
-		t.Errorf("Expected PackagesCount = 5, got %d", result.PackagesCount)
-	}
-}
-
-func TestNewIOCCache_WithOptions(t *testing.T) {
-	tmpDir := t.TempDir()
-	customURL := "https://example.com/iocs.csv"
-	customClient := &http.Client{Timeout: 30 * time.Second}
-
-	cache, err := newIOCCache(
-		WithCacheDir(tmpDir),
-		WithSourceURL(customURL),
-		WithCacheHTTPClient(customClient),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
-	}
-
-	if cache.cacheDir != tmpDir {
-		t.Errorf("cacheDir = %q, want %q", cache.cacheDir, tmpDir)
-	}
-	if cache.sourceURL != customURL {
-		t.Errorf("sourceURL = %q, want %q", cache.sourceURL, customURL)
-	}
-	if cache.httpClient != customClient {
-		t.Error("httpClient was not set correctly")
-	}
-}
-
-func TestNewDetector_WithOptions(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-test-pkg,1.0.0,datadog
-`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(csvData))
-	}))
-	defer server.Close()
 
 	detector, err := NewDetector(
-		WithCacheOptions(
-			WithCacheDir(t.TempDir()),
-			WithSourceURL(server.URL),
-			WithCacheHTTPClient(server.Client()),
-		),
+		withDetectorCacheDir(t.TempDir()),
+		withDetectorSources(customSource),
 	)
 	if err != nil {
 		t.Fatalf("NewDetector() error = %v", err)
 	}
 
-	// Should be able to load via refresh
+	// Load the data
+	if err := detector.EnsureLoaded(); err != nil {
+		t.Fatalf("EnsureLoaded() error = %v", err)
+	}
+
+	// Check package should work
+	finding := detector.CheckPackage("test-pkg", "1.0.0")
+	if finding == nil {
+		t.Error("Expected finding for test-pkg@1.0.0")
+	}
+}
+
+func TestDetector_Refresh(t *testing.T) {
+	sourceData := &types.SourceData{
+		Source:   "refreshable",
+		Campaign: "test",
+		Packages: map[string]types.SourcePackage{
+			"pkg": {Name: "pkg", Versions: []string{"1.0.0"}},
+		},
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	testSource := &mockTestSource{
+		name:     "refreshable",
+		cacheTTL: time.Hour,
+		data:     sourceData,
+	}
+
+	detector, err := NewDetector(
+		withDetectorCacheDir(t.TempDir()),
+		withDetectorSources(testSource),
+	)
+	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+
+	// Force refresh
 	result, err := detector.Refresh(true)
 	if err != nil {
 		t.Fatalf("Refresh() error = %v", err)
@@ -823,96 +417,43 @@ test-pkg,1.0.0,datadog
 		t.Error("Expected Updated = true")
 	}
 
-	// Check package should work now
-	finding := detector.CheckPackage("test-pkg", "1.0.0")
-	if finding == nil {
-		t.Error("Expected finding for test-pkg@1.0.0")
+	if result.PackagesCount != 1 {
+		t.Errorf("PackagesCount = %d, want 1", result.PackagesCount)
 	}
 }
 
-func TestDetector_EnsureLoaded_RefreshOnStale(t *testing.T) {
-	csvData := `package_name,package_versions,sources
-refreshed-pkg,1.0.0,datadog
-`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(csvData))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	cache, err := newIOCCache(
-		WithCacheDir(tmpDir),
-		WithSourceURL(server.URL),
-		WithCacheHTTPClient(server.Client()),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
+func TestDetector_EnsureLoaded(t *testing.T) {
+	sourceData := &types.SourceData{
+		Source:   "loadable",
+		Campaign: "test",
+		Packages: map[string]types.SourcePackage{
+			"loaded-pkg": {Name: "loaded-pkg", Versions: []string{"1.0.0"}},
+		},
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	detector := &Detector{cache: cache}
+	testSource := &mockTestSource{
+		name:     "loadable",
+		cacheTTL: time.Hour,
+		data:     sourceData,
+	}
 
-	// EnsureLoaded should fetch from server since cache is empty
-	err = detector.EnsureLoaded()
+	detector, err := NewDetector(
+		withDetectorCacheDir(t.TempDir()),
+		withDetectorSources(testSource),
+	)
 	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+
+	// EnsureLoaded should fetch data
+	if err := detector.EnsureLoaded(); err != nil {
 		t.Fatalf("EnsureLoaded() error = %v", err)
 	}
 
-	if detector.db == nil {
-		t.Fatal("EnsureLoaded() did not load database")
-	}
-
-	// Should have the package from the server
-	finding := detector.CheckPackage("refreshed-pkg", "1.0.0")
+	// Should be able to check packages now
+	finding := detector.CheckPackage("loaded-pkg", "1.0.0")
 	if finding == nil {
-		t.Error("Expected finding for refreshed-pkg@1.0.0")
-	}
-}
-
-func TestDetector_EnsureLoaded_UsesStaleOnRefreshError(t *testing.T) {
-	// Server that fails
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	cache, err := newIOCCache(
-		WithCacheDir(tmpDir),
-		WithSourceURL(server.URL),
-		WithCacheHTTPClient(server.Client()),
-	)
-	if err != nil {
-		t.Fatalf("newIOCCache() error = %v", err)
-	}
-
-	// Save stale data with old timestamp
-	db := createTestIOCDatabase()
-	if err := cache.save(db); err != nil {
-		t.Fatal(err)
-	}
-
-	oldMeta := &types.IOCMeta{
-		LastUpdated:  time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
-		PackageCount: len(db.Packages),
-		VersionCount: 6,
-	}
-	if err := cache.saveMeta(oldMeta); err != nil {
-		t.Fatal(err)
-	}
-
-	detector := &Detector{cache: cache}
-
-	// EnsureLoaded should use stale data when refresh fails
-	err = detector.EnsureLoaded()
-	if err != nil {
-		t.Fatalf("EnsureLoaded() error = %v (should use stale data)", err)
-	}
-
-	// Should have the stale package
-	finding := detector.CheckPackage("malicious-pkg", "1.0.0")
-	if finding == nil {
-		t.Error("Expected finding for malicious-pkg@1.0.0 from stale cache")
+		t.Error("Expected finding for loaded-pkg@1.0.0")
 	}
 }

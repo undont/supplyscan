@@ -124,7 +124,7 @@ func (s *Scanner) CheckPackage(name, version string) (*types.CheckResult, error)
 	// Check supply chain
 	if finding := s.detector.CheckPackage(name, version); finding != nil {
 		result.SupplyChain.Compromised = true
-		result.SupplyChain.Campaign = finding.Type
+		result.SupplyChain.Campaigns = []string{finding.Type}
 	}
 
 	// Audit for vulnerabilities
