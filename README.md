@@ -10,11 +10,11 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 
 ## Features
 
-- **Supply chain detection**: Identifies packages compromised in the Shai-Hulud campaign using DataDog's IOC database
+- **Supply chain detection**: Identifies compromised packages by aggregating multiple IOC sources (DataDog, GitHub Advisory Database)
 - **Vulnerability scanning**: Integrates with npm audit API to find known CVEs
 - **Multi-format support**: Parses lockfiles from npm, Yarn (classic & berry), pnpm, Bun, and Deno
 - **Dual mode**: Runs as an MCP server or standalone CLI tool
-- **Automatic caching**: IOC database cached locally with 6-hour TTL
+- **Per-source caching**: Each IOC source cached independently with configurable TTL
 
 ## Supported Lockfiles
 
@@ -29,15 +29,28 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 
 ## Installation
 
-### Docker (Recommended)
+### Claude Code CLI (Recommended)
 
-No installation required - just configure your MCP client and Docker pulls the image automatically on first run.
+Install with a single command - no config editing required:
+
+```bash
+claude mcp add supplyscan -s user -- \
+  docker run --rm -i --pull always \
+  -v "$HOME:$HOME:ro" \
+  ghcr.io/seanhalberthal/supplyscan-mcp:latest
+```
+
+This adds supplyscan to your user-level config, available across all projects. Restart Claude Code to activate.
+
+### Docker (Manual Config)
+
+Alternatively, configure manually. Docker pulls the image automatically on first run.
 
 Skip to [Configuration](#configuration).
 
-### Alternative: Build from Source
+### Build from Source
 
-If you prefer a native binary and have Go 1.23+ installed:
+If you prefer a native binary (requires Go 1.23+):
 
 ```bash
 git clone https://github.com/seanhalberthal/supplyscan-mcp.git
@@ -47,7 +60,7 @@ go build -o supplyscan-mcp ./cmd
 mv supplyscan-mcp /usr/local/bin/
 ```
 
-### Alternative: Download Binary
+### Download Binary
 
 ```bash
 # macOS (Apple Silicon)
@@ -68,9 +81,11 @@ curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/downloa
 
 ## Configuration
 
-### Claude Code / OpenCode (Docker)
+These manual configurations are alternatives to the [CLI install](#claude-code-cli-recommended) method above.
 
-Add to `~/.claude.json`:
+### Claude Code / Claude Desktop (Docker)
+
+Add to your MCP config file (`~/.claude.json` for Claude Code, `claude_desktop_config.json` for Claude Desktop):
 
 ```json
 {
@@ -88,11 +103,9 @@ Add to `~/.claude.json`:
 }
 ```
 
-Replace `/Users/you` with your home directory path. The `-v` flag mounts it at the same path inside the container (read-only), so file paths work naturally.
+Replace `/Users/you` with your home directory. The volume mount uses the same path inside the container so file paths work seamlessly.
 
-The `--pull always` flag ensures Docker checks for image updates on every invocation, so you always run the latest version.
-
-**Tighter access**: To limit access to a specific folder, mount it at the same path:
+**Restrict access** to a specific folder:
 
 ```json
 "-v", "/Users/you/projects:/Users/you/projects:ro"
@@ -120,9 +133,9 @@ These IDEs support workspace variables, which makes configuration simpler:
 
 The workspace folder is mounted at the same path inside the container, so paths work naturally.
 
-### Claude Desktop / Claude Code (Binary)
+### Binary
 
-If using `go install` or a downloaded binary:
+If using a native binary (built from source or downloaded):
 
 ```json
 {
@@ -215,8 +228,14 @@ supplyscan-mcp --cli status
 
 ## Data Sources
 
-- **IOC Database**: [DataDog Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) (Shai-Hulud campaign)
-- **Vulnerability Data**: [npm Registry Audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)
+### IOC Sources (Aggregated)
+
+- **DataDog IOC Database**: [Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) - Shai-Hulud campaign packages
+- **GitHub Advisory Database**: [Security Advisories](https://github.com/advisories) - npm malware advisories (GHSA)
+
+### Vulnerability Data
+
+- **npm Audit API**: [Registry audit endpoint](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities) - known CVEs
 
 ## Building
 
