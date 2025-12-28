@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // defaultEndpoint is the npm registry audit endpoint.

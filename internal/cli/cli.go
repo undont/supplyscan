@@ -1,4 +1,4 @@
-// Package cli provides the command-line interface for supplyscan-mcp.
+// Package cli provides the command-line interface for supplyscan.
 package cli
 
 import (
@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/scanner"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 const errorFormat = "Error: %v\n"
@@ -53,11 +53,11 @@ func Run(scan *scanner.Scanner, args []string) {
 }
 
 func printUsage() {
-	fmt.Println(`supplyscan-mcp - JavaScript ecosystem security scanner
+	fmt.Println(`supplyscan - JavaScript ecosystem security scanner
 
 Usage:
-  supplyscan-mcp                    Run as MCP server (default)
-  supplyscan-mcp --cli <command>    Run in CLI mode
+  supplyscan                    Run as MCP server (default)
+  supplyscan --cli <command>    Run in CLI mode
 
 Commands:
   status                            Show scanner version and database info

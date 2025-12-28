@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/supplychain/sources"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/supplychain/sources"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // Detector checks packages against the IOC database.

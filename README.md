@@ -1,4 +1,4 @@
-# supplyscan-mcp
+# supplyscan
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -30,8 +30,8 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 ## Quick Start
 
 ```bash
-go install github.com/seanhalberthal/supplyscan-mcp/cmd/supplyscan-mcp@latest && \
-claude mcp add supplyscan -s user -- supplyscan-mcp
+go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
+claude mcp add mcp-supplyscan -s user -- supplyscan
 ```
 
 Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
@@ -41,36 +41,36 @@ Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PAT
 ### Go Install (Recommended)
 
 ```bash
-go install github.com/seanhalberthal/supplyscan-mcp/cmd/supplyscan-mcp@latest
+go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
 ```
 
 Ensure `$GOPATH/bin` (or `$HOME/go/bin`) is in your PATH.
 
 ### Download Binary
 
-Pre-built binaries are available from [GitHub Releases](https://github.com/seanhalberthal/supplyscan-mcp/releases):
+Pre-built binaries are available from [GitHub Releases](https://github.com/seanhalberthal/supplyscan/releases):
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/download/supplyscan-mcp-darwin-arm64 \
-  -o /usr/local/bin/supplyscan-mcp && chmod +x /usr/local/bin/supplyscan-mcp
+curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-darwin-arm64 \
+  -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 
 # macOS (Intel)
-curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/download/supplyscan-mcp-darwin-amd64 \
-  -o /usr/local/bin/supplyscan-mcp && chmod +x /usr/local/bin/supplyscan-mcp
+curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-darwin-amd64 \
+  -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 
 # Linux (x64)
-curl -L https://github.com/seanhalberthal/supplyscan-mcp/releases/latest/download/supplyscan-mcp-linux-amd64 \
-  -o /usr/local/bin/supplyscan-mcp && chmod +x /usr/local/bin/supplyscan-mcp
+curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-linux-amd64 \
+  -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/seanhalberthal/supplyscan-mcp.git
-cd supplyscan-mcp
-go build -o supplyscan-mcp ./cmd/supplyscan-mcp
-mv supplyscan-mcp /usr/local/bin/
+git clone https://github.com/seanhalberthal/supplyscan.git
+cd supplyscan
+go build -o supplyscan ./cmd/supplyscan
+mv supplyscan /usr/local/bin/
 ```
 
 ## Configuration
@@ -78,7 +78,7 @@ mv supplyscan-mcp /usr/local/bin/
 ### Claude Code
 
 ```bash
-claude mcp add supplyscan -s user -- supplyscan-mcp
+claude mcp add mcp-supplyscan -s user -- supplyscan
 ```
 
 ### Claude Desktop / Cursor / Other Clients
@@ -88,8 +88,8 @@ Add to your MCP config file:
 ```json
 {
   "mcpServers": {
-    "supplyscan": {
-      "command": "supplyscan-mcp"
+    "mcp-supplyscan": {
+      "command": "supplyscan"
     }
   }
 }
@@ -136,22 +136,22 @@ The binary can also run as a standalone CLI tool for testing or CI integration.
 
 ```bash
 # Scan current directory
-supplyscan-mcp --cli scan .
+supplyscan --cli scan .
 
 # Scan specific path recursively
-supplyscan-mcp --cli scan /path/to/monorepo --recursive
+supplyscan --cli scan /path/to/monorepo --recursive
 
 # Scan production dependencies only (exclude devDependencies)
-supplyscan-mcp --cli scan . --no-dev
+supplyscan --cli scan . --no-dev
 
 # Check a specific package
-supplyscan-mcp --cli check lodash 4.17.20
+supplyscan --cli check lodash 4.17.20
 
 # Refresh IOC database
-supplyscan-mcp --cli refresh
+supplyscan --cli refresh
 
 # Show status
-supplyscan-mcp --cli status
+supplyscan --cli status
 ```
 
 ## Updating
@@ -159,10 +159,10 @@ supplyscan-mcp --cli status
 To update to the latest version:
 
 ```bash
-go install github.com/seanhalberthal/supplyscan-mcp/cmd/supplyscan-mcp@latest
+go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
 ```
 
-Use `supplyscan_status` (MCP) or `supplyscan-mcp --cli status` to check your current version.
+Use `supplyscan_status` (MCP) or `supplyscan --cli status` to check your current version.
 
 ## Data Sources
 
@@ -180,15 +180,15 @@ Use `supplyscan_status` (MCP) or `supplyscan-mcp --cli status` to check your cur
 <details>
 <summary><strong>Docker (Alternative)</strong></summary>
 
-If you prefer containerised execution, supplyscan-mcp is available as a Docker image. Note that you must mount your project directory into the container.
+If you prefer containerised execution, supplyscan is available as a Docker image. Note that you must mount your project directory into the container.
 
 ### Installation
 
 ```bash
-claude mcp add supplyscan -s user -- \
+claude mcp add mcp-supplyscan -s user -- \
   docker run --rm -i --pull always \
   -v "$PWD:$PWD:ro" \
-  ghcr.io/seanhalberthal/supplyscan-mcp:latest
+  ghcr.io/seanhalberthal/supplyscan:latest
 ```
 
 ### Manual Configuration
@@ -196,13 +196,13 @@ claude mcp add supplyscan -s user -- \
 ```json
 {
   "mcpServers": {
-    "supplyscan": {
+    "mcp-supplyscan": {
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
         "--pull", "always",
         "-v", "/path/to/your/projects:/path/to/your/projects:ro",
-        "ghcr.io/seanhalberthal/supplyscan-mcp:latest"
+        "ghcr.io/seanhalberthal/supplyscan:latest"
       ]
     }
   }
@@ -215,11 +215,11 @@ Replace `/path/to/your/projects` with the directory containing your projects. Th
 
 ```bash
 # Scan a directory
-docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan-mcp:latest \
+docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan:latest \
   --cli scan "$PWD"
 
 # Check a specific package (no mount needed)
-docker run --rm ghcr.io/seanhalberthal/supplyscan-mcp:latest \
+docker run --rm ghcr.io/seanhalberthal/supplyscan:latest \
   --cli check lodash 4.17.20
 ```
 

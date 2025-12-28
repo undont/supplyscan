@@ -8,8 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/scanner"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // getStructuredContent returns the StructuredContent from a result.

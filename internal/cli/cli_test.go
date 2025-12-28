@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/scanner"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // captureOutput captures stdout during function execution
@@ -129,7 +129,7 @@ func TestPrintUsage(t *testing.T) {
 
 	// Check that usage contains expected elements
 	expectedPhrases := []string{
-		"supplyscan-mcp",
+		"supplyscan",
 		"MCP server",
 		"CLI mode",
 		"status",
@@ -427,7 +427,7 @@ func TestRun_NoArgs(t *testing.T) {
 	if *exitCode != 1 {
 		t.Errorf("Exit code = %d, want 1", *exitCode)
 	}
-	if !strings.Contains(output, "supplyscan-mcp") {
+	if !strings.Contains(output, "supplyscan") {
 		t.Error("Expected usage output")
 	}
 }

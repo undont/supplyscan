@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/jsonc"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/jsonc"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // bunLockfile represents a parsed bun.lock file.

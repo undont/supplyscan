@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // mockTestSource implements IOCSource for testing

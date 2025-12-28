@@ -1,4 +1,4 @@
-// Package types defines shared data structures for supplyscan-mcp.
+// Package types defines shared data structures for supplyscan.
 package types
 
 // Version is the application version. Set at build time via -ldflags.

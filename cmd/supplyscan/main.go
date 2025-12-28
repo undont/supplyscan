@@ -1,13 +1,13 @@
-// Package main implements the supplyscan-mcp entry point.
+// Package main implements the supplyscan entry point.
 package main
 
 import (
 	"flag"
 	"log"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/cli"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/server"
+	"github.com/seanhalberthal/supplyscan/internal/cli"
+	"github.com/seanhalberthal/supplyscan/internal/scanner"
+	"github.com/seanhalberthal/supplyscan/internal/server"
 )
 
 func main() {

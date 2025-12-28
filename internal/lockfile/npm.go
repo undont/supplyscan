@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // npmLockfile represents a parsed package-lock.json or npm-shrinkwrap.json.
