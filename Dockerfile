@@ -4,7 +4,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/seanhalberthal/supplyscan-mcp/internal/types.Version=${VERSION}" -o /supplyscan-mcp ./cmd
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/seanhalberthal/supplyscan-mcp/internal/types.Version=${VERSION}" -o /supplyscan-mcp ./cmd/supplyscan-mcp
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
