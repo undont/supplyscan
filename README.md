@@ -27,11 +27,11 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 | Bun | `bun.lock` |
 | Deno | `deno.lock` |
 
-## Quick Start
+## MCP Quick Start
 
 ```bash
 go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
-claude mcp add mcp-supplyscan -s user -- supplyscan
+claude mcp add mcp-supplyscan -s user -- supplyscan --mcp
 ```
 
 Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
@@ -78,7 +78,7 @@ mv supplyscan /usr/local/bin/
 ### Claude Code
 
 ```bash
-claude mcp add mcp-supplyscan -s user -- supplyscan
+claude mcp add mcp-supplyscan -s user -- supplyscan --mcp
 ```
 
 ### Claude Desktop / Cursor / Other Clients
@@ -89,7 +89,8 @@ Add to your MCP config file:
 {
   "mcpServers": {
     "mcp-supplyscan": {
-      "command": "supplyscan"
+      "command": "supplyscan",
+      "args": ["--mcp"]
     }
   }
 }
@@ -132,26 +133,46 @@ Update the IOC database from upstream sources.
 
 ## CLI Mode
 
-The binary can also run as a standalone CLI tool for testing or CI integration.
+The binary runs as a standalone CLI tool by default.
 
 ```bash
-# Scan current directory
-supplyscan --cli scan .
+# Scan current directory (default)
+supplyscan scan
 
 # Scan specific path recursively
-supplyscan --cli scan /path/to/monorepo --recursive
+supplyscan scan /path/to/monorepo --recursive
+supplyscan scan /path/to/monorepo -r  # short form
 
 # Scan production dependencies only (exclude devDependencies)
-supplyscan --cli scan . --no-dev
+supplyscan scan --no-dev
+
+# Combine flags
+supplyscan scan /path/to/monorepo -r --no-dev
 
 # Check a specific package
-supplyscan --cli check lodash 4.17.20
+supplyscan check lodash 4.17.20
 
 # Refresh IOC database
-supplyscan --cli refresh
+supplyscan refresh
+supplyscan refresh --force  # force update even if cache is fresh
 
 # Show status
-supplyscan --cli status
+supplyscan status
+
+# Output raw JSON (for scripting/CI)
+supplyscan scan --json
+supplyscan check lodash 4.17.20 --json
+
+# Show help
+supplyscan help
+```
+
+### MCP Server Mode
+
+To run as an MCP server (for AI agent integration):
+
+```bash
+supplyscan --mcp
 ```
 
 ## Updating
@@ -162,7 +183,7 @@ To update to the latest version:
 go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
 ```
 
-Use `supplyscan_status` (MCP) or `supplyscan --cli status` to check your current version.
+Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current version.
 
 ## Data Sources
 
@@ -188,7 +209,7 @@ If you prefer containerised execution, supplyscan is available as a Docker image
 claude mcp add mcp-supplyscan -s user -- \
   docker run --rm -i --pull always \
   -v "$PWD:$PWD:ro" \
-  ghcr.io/seanhalberthal/supplyscan:latest
+  ghcr.io/seanhalberthal/supplyscan:latest --mcp
 ```
 
 ### Manual Configuration
@@ -202,7 +223,8 @@ claude mcp add mcp-supplyscan -s user -- \
         "run", "--rm", "-i",
         "--pull", "always",
         "-v", "/path/to/your/projects:/path/to/your/projects:ro",
-        "ghcr.io/seanhalberthal/supplyscan:latest"
+        "ghcr.io/seanhalberthal/supplyscan:latest",
+        "--mcp"
       ]
     }
   }
@@ -216,11 +238,14 @@ Replace `/path/to/your/projects` with the directory containing your projects. Th
 ```bash
 # Scan a directory
 docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan:latest \
-  --cli scan "$PWD"
+  scan "$PWD"
 
 # Check a specific package (no mount needed)
 docker run --rm ghcr.io/seanhalberthal/supplyscan:latest \
-  --cli check lodash 4.17.20
+  check lodash 4.17.20
+
+# Run as MCP server
+docker run --rm -i ghcr.io/seanhalberthal/supplyscan:latest --mcp
 ```
 
 </details>
