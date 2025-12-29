@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	cliMode := flag.Bool("cli", false, "Run in CLI mode instead of MCP server")
+	mcpMode := flag.Bool("mcp", false, "Run as MCP server")
 	flag.Parse()
 
 	scan, err := scanner.New()
@@ -19,10 +19,10 @@ func main() {
 		log.Fatalf("Failed to initialise scanner: %v", err)
 	}
 
-	if *cliMode {
-		cli.Run(scan, flag.Args())
+	if *mcpMode {
+		server.Run(scan)
 		return
 	}
 
-	server.Run(scan)
+	cli.Run(scan, flag.Args())
 }

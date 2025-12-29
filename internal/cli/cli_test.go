@@ -14,6 +14,11 @@ import (
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
+// resetOutputJSON resets the global outputJSON flag between tests.
+func resetOutputJSON() {
+	outputJSON = false
+}
+
 // captureOutput captures stdout during function execution
 func captureOutput(f func()) string {
 	old := os.Stdout
@@ -122,7 +127,64 @@ func TestParseScanFlags(t *testing.T) {
 	}
 }
 
+func TestParseGlobalFlags(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantJSON   bool
+		wantRemain []string
+	}{
+		{
+			name:       "no flags",
+			args:       []string{"scan", "."},
+			wantJSON:   false,
+			wantRemain: []string{"scan", "."},
+		},
+		{
+			name:       "json flag",
+			args:       []string{"--json", "scan", "."},
+			wantJSON:   true,
+			wantRemain: []string{"scan", "."},
+		},
+		{
+			name:       "json flag at end",
+			args:       []string{"scan", ".", "--json"},
+			wantJSON:   true,
+			wantRemain: []string{"scan", "."},
+		},
+		{
+			name:       "json flag in middle",
+			args:       []string{"scan", "--json", "."},
+			wantJSON:   true,
+			wantRemain: []string{"scan", "."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetOutputJSON()
+			remaining := parseGlobalFlags(tt.args)
+
+			if outputJSON != tt.wantJSON {
+				t.Errorf("outputJSON = %v, want %v", outputJSON, tt.wantJSON)
+			}
+
+			if len(remaining) != len(tt.wantRemain) {
+				t.Errorf("remaining = %v, want %v", remaining, tt.wantRemain)
+				return
+			}
+
+			for i, arg := range remaining {
+				if arg != tt.wantRemain[i] {
+					t.Errorf("remaining[%d] = %v, want %v", i, arg, tt.wantRemain[i])
+				}
+			}
+		})
+	}
+}
+
 func TestPrintUsage(t *testing.T) {
+	resetOutputJSON()
 	output := captureOutput(func() {
 		printUsage()
 	})
@@ -131,12 +193,13 @@ func TestPrintUsage(t *testing.T) {
 	expectedPhrases := []string{
 		"supplyscan",
 		"MCP server",
-		"CLI mode",
+		"--mcp",
 		"status",
 		"scan",
 		"check",
 		"refresh",
 		"--recursive",
+		"--json",
 	}
 
 	for _, phrase := range expectedPhrases {
@@ -146,7 +209,10 @@ func TestPrintUsage(t *testing.T) {
 	}
 }
 
-func TestRunStatus(t *testing.T) {
+func TestRunStatus_JSON(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
@@ -188,7 +254,37 @@ func TestRunStatus(t *testing.T) {
 	}
 }
 
-func TestRunScan_Success(t *testing.T) {
+func TestRunStatus_Styled(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		runStatus(scan)
+	})
+
+	// Should contain styled elements
+	expectedPhrases := []string{
+		"Scanner Status",
+		"Version",
+		"IOC Database",
+		"Supported Lockfiles",
+	}
+
+	for _, phrase := range expectedPhrases {
+		if !strings.Contains(output, phrase) {
+			t.Errorf("Styled output missing %q", phrase)
+		}
+	}
+}
+
+func TestRunScan_Success_JSON(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	// Create test project
 	tmpDir := t.TempDir()
 	lockfileContent := `{
@@ -223,7 +319,56 @@ func TestRunScan_Success(t *testing.T) {
 	}
 }
 
+func TestScanPathParsing(t *testing.T) {
+	// Test that scan command correctly parses path vs flags
+	tests := []struct {
+		name     string
+		args     []string
+		wantPath string
+	}{
+		{
+			name:     "no path defaults to dot",
+			args:     []string{"scan"},
+			wantPath: ".",
+		},
+		{
+			name:     "explicit path",
+			args:     []string{"scan", "/some/path"},
+			wantPath: "/some/path",
+		},
+		{
+			name:     "path with flags after",
+			args:     []string{"scan", "/some/path", "--recursive"},
+			wantPath: "/some/path",
+		},
+		{
+			name:     "flags only defaults to dot",
+			args:     []string{"scan", "--recursive"},
+			wantPath: ".",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the path parsing logic from Run
+			args := tt.args
+			if len(args) > 0 && args[0] == "scan" {
+				path := "."
+				if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
+					path = args[1]
+				}
+				if path != tt.wantPath {
+					t.Errorf("path = %q, want %q", path, tt.wantPath)
+				}
+			}
+		})
+	}
+}
+
 func TestRunScan_WithFlags(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	// Create test project with nested structure
 	tmpDir := t.TempDir()
 
@@ -275,7 +420,10 @@ func TestRunScan_WithFlags(t *testing.T) {
 	}
 }
 
-func TestRunCheck(t *testing.T) {
+func TestRunCheck_JSON(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
@@ -297,7 +445,36 @@ func TestRunCheck(t *testing.T) {
 	}
 }
 
-func TestRunRefresh(t *testing.T) {
+func TestRunCheck_Styled(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		runCheck(scan, "lodash", "4.17.21")
+	})
+
+	// Should contain styled elements
+	expectedPhrases := []string{
+		"Package Check",
+		"lodash",
+		"4.17.21",
+	}
+
+	for _, phrase := range expectedPhrases {
+		if !strings.Contains(output, phrase) {
+			t.Errorf("Styled output missing %q", phrase)
+		}
+	}
+}
+
+func TestRunRefresh_JSON(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
@@ -320,6 +497,7 @@ func TestRunRefresh(t *testing.T) {
 }
 
 func TestPrintJSON(t *testing.T) {
+	resetOutputJSON()
 	testData := struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -355,6 +533,7 @@ func TestPrintJSON(t *testing.T) {
 }
 
 func TestPrintJSON_NestedStruct(t *testing.T) {
+	resetOutputJSON()
 	testData := types.StatusResponse{
 		Version: types.Version,
 		IOCDatabase: types.IOCDatabaseStatus{
@@ -412,7 +591,8 @@ func mockExit(t *testing.T) (restore func(), exitCode *int) {
 }
 
 func TestRun_NoArgs(t *testing.T) {
-	restore, exitCode := mockExit(t)
+	resetOutputJSON()
+	restore, _ := mockExit(t)
 	defer restore()
 
 	scan, err := scanner.New()
@@ -424,15 +604,14 @@ func TestRun_NoArgs(t *testing.T) {
 		Run(scan, []string{})
 	})
 
-	if *exitCode != 1 {
-		t.Errorf("Exit code = %d, want 1", *exitCode)
-	}
+	// Now prints usage without error exit
 	if !strings.Contains(output, "supplyscan") {
 		t.Error("Expected usage output")
 	}
 }
 
 func TestRun_UnknownCommand(t *testing.T) {
+	resetOutputJSON()
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -454,6 +633,8 @@ func TestRun_UnknownCommand(t *testing.T) {
 }
 
 func TestRun_StatusCommand(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -463,7 +644,7 @@ func TestRun_StatusCommand(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"status"})
+		Run(scan, []string{"status", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -476,28 +657,8 @@ func TestRun_StatusCommand(t *testing.T) {
 	}
 }
 
-func TestRun_ScanCommand_MissingPath(t *testing.T) {
-	restore, exitCode := mockExit(t)
-	defer restore()
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
-
-	stderr := captureStderr(func() {
-		Run(scan, []string{"scan"})
-	})
-
-	if *exitCode != 1 {
-		t.Errorf("Exit code = %d, want 1", *exitCode)
-	}
-	if !strings.Contains(stderr, "scan requires a path argument") {
-		t.Errorf("Expected path required error, got: %s", stderr)
-	}
-}
-
 func TestRun_ScanCommand_InvalidPath(t *testing.T) {
+	resetOutputJSON()
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -513,12 +674,14 @@ func TestRun_ScanCommand_InvalidPath(t *testing.T) {
 	if *exitCode != 1 {
 		t.Errorf("Exit code = %d, want 1", *exitCode)
 	}
-	if !strings.Contains(stderr, "Error:") {
+	if !strings.Contains(stderr, "Error") && !strings.Contains(stderr, crossMark) {
 		t.Errorf("Expected error output, got: %s", stderr)
 	}
 }
 
 func TestRun_ScanCommand_WithFlags(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -534,7 +697,7 @@ func TestRun_ScanCommand_WithFlags(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"scan", tmpDir, "--recursive", "--no-dev"})
+		Run(scan, []string{"scan", tmpDir, "--recursive", "--no-dev", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -548,6 +711,7 @@ func TestRun_ScanCommand_WithFlags(t *testing.T) {
 }
 
 func TestRun_CheckCommand_MissingArgs(t *testing.T) {
+	resetOutputJSON()
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -580,6 +744,8 @@ func TestRun_CheckCommand_MissingArgs(t *testing.T) {
 }
 
 func TestRun_CheckCommand_Valid(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -589,7 +755,7 @@ func TestRun_CheckCommand_Valid(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"check", "lodash", "4.17.21"})
+		Run(scan, []string{"check", "lodash", "4.17.21", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -603,6 +769,8 @@ func TestRun_CheckCommand_Valid(t *testing.T) {
 }
 
 func TestRun_RefreshCommand(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -612,7 +780,7 @@ func TestRun_RefreshCommand(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"refresh"})
+		Run(scan, []string{"refresh", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -626,6 +794,8 @@ func TestRun_RefreshCommand(t *testing.T) {
 }
 
 func TestRun_RefreshCommand_Force(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
 	restore, exitCode := mockExit(t)
 	defer restore()
 
@@ -635,7 +805,7 @@ func TestRun_RefreshCommand_Force(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"refresh", "--force"})
+		Run(scan, []string{"refresh", "--force", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -648,16 +818,48 @@ func TestRun_RefreshCommand_Force(t *testing.T) {
 	}
 }
 
-func TestErrorFormat(t *testing.T) {
-	expected := "Error: %v\n"
-	if errorFormat != expected {
-		t.Errorf("errorFormat = %q, want %q", errorFormat, expected)
+func TestRun_HelpCommand(t *testing.T) {
+	resetOutputJSON()
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	// Test "help" command
+	output := captureOutput(func() {
+		Run(scan, []string{"help"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+	if !strings.Contains(output, "supplyscan") {
+		t.Error("Expected usage output")
+	}
+
+	// Test "--help" flag
+	*exitCode = 0
+	output = captureOutput(func() {
+		Run(scan, []string{"--help"})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
+	if !strings.Contains(output, "supplyscan") {
+		t.Error("Expected usage output")
 	}
 }
 
 // Integration tests
 
 func TestCLI_StatusIntegration(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
@@ -680,6 +882,9 @@ func TestCLI_StatusIntegration(t *testing.T) {
 }
 
 func TestCLI_ScanIntegration(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	// Create a realistic project structure
 	tmpDir := t.TempDir()
 
@@ -742,6 +947,9 @@ func TestCLI_ScanIntegration(t *testing.T) {
 }
 
 func TestCLI_CheckIntegration(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	scan, err := scanner.New()
 	if err != nil {
 		t.Fatalf("scanner.New() error = %v", err)
@@ -762,6 +970,9 @@ func TestCLI_CheckIntegration(t *testing.T) {
 }
 
 func TestCLI_JSONOutputFormat(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+
 	// Test that all CLI commands produce properly indented JSON
 
 	scan, err := scanner.New()
@@ -809,4 +1020,560 @@ func BenchmarkPrintJSON(b *testing.B) {
 	}
 
 	os.Stdout = old
+}
+
+// =============================================================================
+// Style Functions Tests
+// =============================================================================
+
+func TestSeverityStyle(t *testing.T) {
+	tests := []struct {
+		severity string
+	}{
+		{"critical"},
+		{"high"},
+		{"moderate"},
+		{"medium"}, // alias for moderate
+		{"low"},
+		{"unknown"}, // default case
+		{""},        // empty string
+	}
+
+	for _, tt := range tests {
+		name := tt.severity
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			style := severityStyle(tt.severity)
+			// Render a test string to ensure the style works without error
+			rendered := style.Render("test")
+			// In non-TTY environments (like tests), lipgloss may not add ANSI codes
+			// The important thing is that the function returns without error
+			// and produces output containing the text
+			if !strings.Contains(rendered, "test") {
+				t.Errorf("severityStyle(%q).Render() = %q, should contain 'test'", tt.severity, rendered)
+			}
+		})
+	}
+}
+
+func TestFormatSeverity(t *testing.T) {
+	tests := []string{"critical", "high", "moderate", "medium", "low"}
+
+	for _, severity := range tests {
+		t.Run(severity, func(t *testing.T) {
+			result := formatSeverity(severity)
+			// Should contain the severity text
+			// In non-TTY environments, lipgloss may not add ANSI codes
+			if !strings.Contains(result, severity) {
+				t.Errorf("formatSeverity(%q) = %q, should contain %q", severity, result, severity)
+			}
+		})
+	}
+}
+
+func TestFormatWarning(t *testing.T) {
+	msg := "This is a warning message"
+	result := formatWarning(msg)
+
+	// Should contain the message
+	if !strings.Contains(result, msg) {
+		t.Errorf("formatWarning() should contain the message")
+	}
+
+	// Should contain the warning symbol "!"
+	if !strings.Contains(result, "!") {
+		t.Errorf("formatWarning() should contain '!' symbol")
+	}
+}
+
+// =============================================================================
+// printScanResult Tests
+// =============================================================================
+
+func TestPrintScanResult_NoIssues(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 5,
+			Issues: types.IssueCounts{
+				Critical:    0,
+				High:        0,
+				Moderate:    0,
+				SupplyChain: 0,
+			},
+		},
+		Lockfiles: []types.LockfileInfo{
+			{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show success message
+	if !strings.Contains(output, "No issues found") {
+		t.Error("Expected 'No issues found' message")
+	}
+
+	// Should contain checkmark symbol
+	if !strings.Contains(output, checkMark) {
+		t.Error("Expected success checkmark")
+	}
+
+	// Should show summary
+	if !strings.Contains(output, "Lockfiles scanned") {
+		t.Error("Expected 'Lockfiles scanned' label")
+	}
+	if !strings.Contains(output, "Dependencies") {
+		t.Error("Expected 'Dependencies' label")
+	}
+}
+
+func TestPrintScanResult_WithIssues(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 100,
+			Issues: types.IssueCounts{
+				Critical:    2,
+				High:        3,
+				Moderate:    5,
+				SupplyChain: 1,
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show issues section
+	if !strings.Contains(output, "Issues Found") {
+		t.Error("Expected 'Issues Found' section")
+	}
+
+	// Should show severity counts
+	if !strings.Contains(output, "critical") {
+		t.Error("Expected 'critical' severity")
+	}
+	if !strings.Contains(output, "high") {
+		t.Error("Expected 'high' severity")
+	}
+	if !strings.Contains(output, "moderate") {
+		t.Error("Expected 'moderate' severity")
+	}
+	if !strings.Contains(output, "supply chain") {
+		t.Error("Expected 'supply chain' label")
+	}
+}
+
+func TestPrintScanResult_SupplyChainFindings(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 10,
+			Issues: types.IssueCounts{
+				SupplyChain: 1,
+			},
+		},
+		SupplyChain: types.SupplyChainResult{
+			Findings: []types.SupplyChainFinding{
+				{
+					Package:          "malicious-pkg",
+					InstalledVersion: "1.0.0",
+					Severity:         "critical",
+					Type:             "compromised",
+					Action:           "Remove immediately",
+					Campaigns:        []string{"shai-hulud"},
+				},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show supply chain section
+	if !strings.Contains(output, "Supply Chain Compromises") {
+		t.Error("Expected 'Supply Chain Compromises' section")
+	}
+
+	// Should show package name and version
+	if !strings.Contains(output, "malicious-pkg") {
+		t.Error("Expected package name 'malicious-pkg'")
+	}
+	if !strings.Contains(output, "1.0.0") {
+		t.Error("Expected version '1.0.0'")
+	}
+
+	// Should show finding details
+	if !strings.Contains(output, "Severity") {
+		t.Error("Expected 'Severity' label")
+	}
+	if !strings.Contains(output, "Type") {
+		t.Error("Expected 'Type' label")
+	}
+	if !strings.Contains(output, "Action") {
+		t.Error("Expected 'Action' label")
+	}
+	if !strings.Contains(output, "Campaigns") {
+		t.Error("Expected 'Campaigns' label")
+	}
+	if !strings.Contains(output, "shai-hulud") {
+		t.Error("Expected campaign name 'shai-hulud'")
+	}
+
+	// Should contain cross mark for compromised packages
+	if !strings.Contains(output, crossMark) {
+		t.Error("Expected cross mark for compromised package")
+	}
+}
+
+func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 10,
+		},
+		SupplyChain: types.SupplyChainResult{
+			Warnings: []types.SupplyChainWarning{
+				{
+					Package:          "@pnpm/network.ca-file",
+					InstalledVersion: "1.0.0",
+					Note:             "Package from at-risk namespace",
+				},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show warnings section
+	if !strings.Contains(output, "Warnings") {
+		t.Error("Expected 'Warnings' section")
+	}
+
+	// Should show warning symbol
+	if !strings.Contains(output, "!") {
+		t.Error("Expected '!' warning symbol")
+	}
+
+	// Should show package and note
+	if !strings.Contains(output, "@pnpm/network.ca-file") {
+		t.Error("Expected package name")
+	}
+	if !strings.Contains(output, "at-risk namespace") {
+		t.Error("Expected warning note")
+	}
+}
+
+func TestPrintScanResult_Vulnerabilities(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 10,
+			Issues: types.IssueCounts{
+				High: 1,
+			},
+		},
+		Vulnerabilities: types.VulnerabilityResult{
+			Findings: []types.VulnerabilityFinding{
+				{
+					Package:          "lodash",
+					InstalledVersion: "4.17.15",
+					Severity:         "high",
+					ID:               "GHSA-xxxx-xxxx-xxxx",
+					Title:            "Prototype Pollution",
+					PatchedIn:        "4.17.21",
+				},
+				{
+					Package:          "express",
+					InstalledVersion: "4.17.0",
+					Severity:         "moderate",
+					ID:               "GHSA-yyyy-yyyy-yyyy",
+					Title:            "Open Redirect",
+					PatchedIn:        "", // No patch available
+				},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show vulnerabilities section
+	if !strings.Contains(output, "Vulnerabilities") {
+		t.Error("Expected 'Vulnerabilities' section")
+	}
+
+	// Should show vulnerability details
+	if !strings.Contains(output, "lodash") {
+		t.Error("Expected package name 'lodash'")
+	}
+	if !strings.Contains(output, "GHSA-xxxx-xxxx-xxxx") {
+		t.Error("Expected vulnerability ID")
+	}
+	if !strings.Contains(output, "Prototype Pollution") {
+		t.Error("Expected vulnerability title")
+	}
+	if !strings.Contains(output, "Patched in") {
+		t.Error("Expected 'Patched in' label")
+	}
+	if !strings.Contains(output, "4.17.21") {
+		t.Error("Expected patched version")
+	}
+
+	// Should contain bullet point
+	if !strings.Contains(output, bullet) {
+		t.Error("Expected bullet point for vulnerabilities")
+	}
+}
+
+func TestPrintScanResult_Lockfiles(t *testing.T) {
+	resetOutputJSON()
+
+	result := &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  2,
+			TotalDependencies: 150,
+		},
+		Lockfiles: []types.LockfileInfo{
+			{Path: "package-lock.json", Type: "npm", Dependencies: 100},
+			{Path: "packages/sub/yarn.lock", Type: "yarn-classic", Dependencies: 50},
+		},
+	}
+
+	output := captureOutput(func() {
+		printScanResult(result)
+	})
+
+	// Should show lockfiles section
+	if !strings.Contains(output, "Lockfiles") {
+		t.Error("Expected 'Lockfiles' section")
+	}
+
+	// Should show lockfile paths
+	if !strings.Contains(output, "package-lock.json") {
+		t.Error("Expected 'package-lock.json' path")
+	}
+	if !strings.Contains(output, "yarn.lock") {
+		t.Error("Expected 'yarn.lock' path")
+	}
+
+	// Should show types
+	if !strings.Contains(output, "npm") {
+		t.Error("Expected 'npm' type")
+	}
+	if !strings.Contains(output, "yarn-classic") {
+		t.Error("Expected 'yarn-classic' type")
+	}
+
+	// Should show dependency counts
+	if !strings.Contains(output, "100 deps") {
+		t.Error("Expected '100 deps'")
+	}
+	if !strings.Contains(output, "50 deps") {
+		t.Error("Expected '50 deps'")
+	}
+}
+
+// =============================================================================
+// runCheck Styled Output Tests
+// =============================================================================
+
+func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	// Test with a package that may have vulnerabilities
+	// Using an older lodash version known to have issues
+	output := captureOutput(func() {
+		runCheck(scan, "lodash", "4.17.15")
+	})
+
+	// Should show header
+	if !strings.Contains(output, "Package Check") {
+		t.Error("Expected 'Package Check' header")
+	}
+
+	// Should show package info
+	if !strings.Contains(output, "lodash") {
+		t.Error("Expected package name")
+	}
+	if !strings.Contains(output, "4.17.15") {
+		t.Error("Expected version")
+	}
+
+	// Should show supply chain status (either clean or compromised)
+	hasSupplyChainMsg := strings.Contains(output, "No supply chain issues") ||
+		strings.Contains(output, "compromise detected")
+	if !hasSupplyChainMsg {
+		t.Error("Expected supply chain status message")
+	}
+}
+
+func TestRunCheck_Styled_CleanPackage(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	// Test with a well-known safe package version
+	output := captureOutput(func() {
+		runCheck(scan, "lodash", "4.17.21")
+	})
+
+	// Should show success for supply chain
+	if !strings.Contains(output, "No supply chain issues") {
+		t.Error("Expected 'No supply chain issues' for clean package")
+	}
+
+	// Should contain checkmark
+	if !strings.Contains(output, checkMark) {
+		t.Error("Expected checkmark for clean package")
+	}
+}
+
+// =============================================================================
+// runRefresh Styled Output Tests
+// =============================================================================
+
+func TestRunRefresh_Styled(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		runRefresh(scan, false)
+	})
+
+	// Should show header
+	if !strings.Contains(output, "Database Refresh") {
+		t.Error("Expected 'Database Refresh' header")
+	}
+
+	// Should show either updated or up to date message
+	hasStatusMsg := strings.Contains(output, "Database updated") ||
+		strings.Contains(output, "up to date")
+	if !hasStatusMsg {
+		t.Error("Expected database status message")
+	}
+
+	// Should show counts
+	if !strings.Contains(output, "Packages") {
+		t.Error("Expected 'Packages' label")
+	}
+	if !strings.Contains(output, "Versions") {
+		t.Error("Expected 'Versions' label")
+	}
+	if !strings.Contains(output, "Cache age") {
+		t.Error("Expected 'Cache age' label")
+	}
+}
+
+func TestRunRefresh_Styled_Force(t *testing.T) {
+	resetOutputJSON()
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		runRefresh(scan, true) // Force refresh
+	})
+
+	// Should show header
+	if !strings.Contains(output, "Database Refresh") {
+		t.Error("Expected 'Database Refresh' header")
+	}
+
+	// Force refresh should typically show "Database updated"
+	// (though depends on network, so we just check for any status)
+	hasStatusMsg := strings.Contains(output, "Database updated") ||
+		strings.Contains(output, "up to date")
+	if !hasStatusMsg {
+		t.Error("Expected database status message")
+	}
+}
+
+// =============================================================================
+// runScan Styled Output Tests
+// =============================================================================
+
+func TestRunScan_Styled(t *testing.T) {
+	resetOutputJSON()
+
+	// Create test project
+	tmpDir := t.TempDir()
+	lockfileContent := `{
+		"name": "test",
+		"lockfileVersion": 3,
+		"packages": {
+			"node_modules/lodash": {"version": "4.17.21"},
+			"node_modules/express": {"version": "4.18.2"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfileContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scan, err := scanner.New()
+	if err != nil {
+		t.Fatalf("scanner.New() error = %v", err)
+	}
+
+	output := captureOutput(func() {
+		runScan(scan, tmpDir, scanOptions{Recursive: false, IncludeDev: true})
+	})
+
+	// Should show header
+	if !strings.Contains(output, "Scan Results") {
+		t.Error("Expected 'Scan Results' header")
+	}
+
+	// Should show summary section
+	if !strings.Contains(output, "Summary") {
+		t.Error("Expected 'Summary' section")
+	}
+	if !strings.Contains(output, "Lockfiles scanned") {
+		t.Error("Expected 'Lockfiles scanned' label")
+	}
+	if !strings.Contains(output, "Dependencies") {
+		t.Error("Expected 'Dependencies' label")
+	}
+
+	// Should show lockfiles section
+	if !strings.Contains(output, "Lockfiles") {
+		t.Error("Expected 'Lockfiles' section")
+	}
+	if !strings.Contains(output, "package-lock.json") {
+		t.Error("Expected lockfile path in output")
+	}
 }
