@@ -62,7 +62,7 @@ jobs:
           # Determine commit type from message prefix
           if echo "$COMMIT_MSG" | grep -qiE '^breaking:|BREAKING CHANGE:'; then
             BUMP_TYPE="major"
-          elif echo "$COMMIT_MSG" | grep -qiE '^feat:|^add:'; then
+          elif echo "$COMMIT_MSG" | grep -qiE '^feat:|^add:|^update:'; then
             BUMP_TYPE="minor"
           elif echo "$COMMIT_MSG" | grep -qiE '^fix:'; then
             BUMP_TYPE="patch"
