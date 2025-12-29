@@ -210,13 +210,13 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -ldflags="-s -w -X github.com/seanhalberthal/supplyscan-mcp/internal/types.Version=${{ steps.version.outputs.version }}" -o supplyscan-mcp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/supplyscan-mcp
+          go build -ldflags="-s -w -X github.com/seanhalberthal/supplyscan/internal/types.Version=${{ steps.version.outputs.version }}" -o supplyscan-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/supplyscan
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
         with:
-          name: supplyscan-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: supplyscan-mcp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          name: supplyscan-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: supplyscan-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
 
   # Consolidation job for branch protection - reports single "build" status
   build:
@@ -336,7 +336,7 @@ jobs:
       - name: Download all artefacts
         uses: actions/download-artifact@v4
         with:
-          pattern: supplyscan-mcp-*
+          pattern: supplyscan-*
           path: dist
           merge-multiple: true
 

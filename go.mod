@@ -1,4 +1,4 @@
-module github.com/seanhalberthal/supplyscan-mcp
+module github.com/seanhalberthal/supplyscan
 
 go 1.25.5
 

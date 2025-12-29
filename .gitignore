@@ -5,7 +5,7 @@
 *.so
 *.dylib
 *.test
-/supplyscan-mcp
+/supplyscan
 
 # Test and coverage
 *.out

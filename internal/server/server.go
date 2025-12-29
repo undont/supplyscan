@@ -1,4 +1,4 @@
-// Package server provides the MCP server implementation for supplyscan-mcp.
+// Package server provides the MCP server implementation for supplyscan.
 package server
 
 import (
@@ -8,8 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/scanner"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/scanner"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // scan holds the scanner instance for tool handlers.
@@ -21,7 +21,7 @@ func Run(s *scanner.Scanner) {
 
 	server := mcp.NewServer(
 		&mcp.Implementation{
-			Name:    "supplyscan-mcp",
+			Name:    "supplyscan",
 			Version: types.Version,
 		},
 		nil,

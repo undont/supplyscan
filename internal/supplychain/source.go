@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // IOCSource represents a provider of IOC (Indicators of Compromise) data.

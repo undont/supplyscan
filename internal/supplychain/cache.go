@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // multiSourceCache manages per-source IOC caching and merged database storage.
@@ -38,7 +38,7 @@ func getDefaultCacheDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "supplyscan-mcp"), nil
+	return filepath.Join(home, ".cache", "supplyscan"), nil
 }
 
 // sourceCacheFile returns the path to a source-specific cache file.

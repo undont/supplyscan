@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // denoLockfile represents a parsed deno.lock file.

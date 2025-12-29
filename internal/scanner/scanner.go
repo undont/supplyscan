@@ -2,10 +2,10 @@
 package scanner
 
 import (
-	"github.com/seanhalberthal/supplyscan-mcp/internal/audit"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/lockfile"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/supplychain"
-	"github.com/seanhalberthal/supplyscan-mcp/internal/types"
+	"github.com/seanhalberthal/supplyscan/internal/audit"
+	"github.com/seanhalberthal/supplyscan/internal/lockfile"
+	"github.com/seanhalberthal/supplyscan/internal/supplychain"
+	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 // Scanner orchestrates the complete security scan.

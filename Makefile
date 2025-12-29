@@ -1,21 +1,21 @@
 .PHONY: build build-all test lint lint-fix clean docker install fmt tidy vet check
 
-BINARY := supplyscan-mcp
+BINARY := supplyscan
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags="-s -w -X github.com/seanhalberthal/supplyscan-mcp/internal/types.Version=$(VERSION)"
+LDFLAGS := -ldflags="-s -w -X github.com/seanhalberthal/supplyscan/internal/types.Version=$(VERSION)"
 
 # Build for current platform
 build:
-	go build $(LDFLAGS) -o $(BINARY) ./cmd/supplyscan-mcp
+	go build $(LDFLAGS) -o $(BINARY) ./cmd/supplyscan
 
 # Cross-compile for all platforms
 build-all: clean
 	@mkdir -p dist
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd/supplyscan-mcp
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd/supplyscan-mcp
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-amd64 ./cmd/supplyscan-mcp
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-arm64 ./cmd/supplyscan-mcp
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd/supplyscan-mcp
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd/supplyscan
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd/supplyscan
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-amd64 ./cmd/supplyscan
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY)-darwin-arm64 ./cmd/supplyscan
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd/supplyscan
 
 # Run tests
 test:
@@ -40,7 +40,7 @@ docker:
 
 # Install to $GOPATH/bin
 install:
-	go install $(LDFLAGS) ./cmd/supplyscan-mcp
+	go install $(LDFLAGS) ./cmd/supplyscan
 
 # Format Go code
 fmt:
