@@ -31,7 +31,7 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 
 ```bash
 go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
-claude mcp add mcp-supplyscan -s user -- supplyscan --mcp
+claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
 
 Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
@@ -78,7 +78,7 @@ mv supplyscan /usr/local/bin/
 ### Claude Code
 
 ```bash
-claude mcp add mcp-supplyscan -s user -- supplyscan --mcp
+claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
 
 ### Claude Desktop / Cursor / Other Clients
@@ -206,7 +206,7 @@ If you prefer containerised execution, supplyscan is available as a Docker image
 ### Installation
 
 ```bash
-claude mcp add mcp-supplyscan -s user -- \
+claude mcp add mcp-supplyscan --transport stdio -s user -- \
   docker run --rm -i --pull always \
   -v "$PWD:$PWD:ro" \
   ghcr.io/seanhalberthal/supplyscan:latest --mcp
