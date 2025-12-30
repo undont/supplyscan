@@ -132,16 +132,44 @@ func runStatus(scan *scanner.Scanner) {
 	fmt.Println()
 
 	fmt.Println(formatSection("IOC Database"))
-	fmt.Printf("  %s %d\n", formatLabel("Packages"), status.IOCDatabase.Packages)
-	fmt.Printf("  %s %d\n", formatLabel("Versions"), status.IOCDatabase.Versions)
-	fmt.Printf("  %s %s\n", formatLabel("Last Updated"), status.IOCDatabase.LastUpdated)
-	fmt.Printf("  %s %s\n", formatLabel("Sources"), strings.Join(status.IOCDatabase.Sources, ", "))
+	printIOCSourceDetails(status.IOCDatabase)
 	fmt.Println()
 
 	fmt.Println(formatSection("Supported Lockfiles"))
 	for _, lf := range status.SupportedLockfiles {
 		fmt.Printf("  %s %s\n", formatMuted(bullet), lf)
 	}
+}
+
+func printIOCSourceDetails(db types.IOCDatabaseStatus) {
+	if len(db.SourceDetails) == 0 {
+		fmt.Printf("  %s\n", formatMuted("Not loaded - run 'refresh' to fetch"))
+		return
+	}
+
+	for _, source := range db.Sources {
+		info, ok := db.SourceDetails[source]
+		if !ok {
+			continue
+		}
+		printIOCSourceLine(source, info)
+	}
+}
+
+func printIOCSourceLine(source string, info types.SourceStatusInfo) {
+	if info.Success {
+		fetchedAgo := formatTimeAgo(info.LastFetched)
+		fmt.Printf("  %s %s %s, %s\n",
+			formatMuted(bullet),
+			source,
+			formatMuted(fmt.Sprintf("(%d packages)", info.PackageCount)),
+			formatMuted(fetchedAgo))
+		return
+	}
+	fmt.Printf("  %s %s %s\n",
+		formatMuted(bullet),
+		source,
+		formatWarning("(failed to fetch)"))
 }
 
 func runScan(scan *scanner.Scanner, path string, opts scanOptions) {

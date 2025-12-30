@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -128,4 +129,37 @@ func formatMuted(text string) string {
 func printStyledError(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintln(os.Stderr, formatError(msg))
+}
+
+// formatTimeAgo returns a human-readable relative time string.
+func formatTimeAgo(timestamp string) string {
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return timestamp
+	}
+
+	duration := time.Since(t)
+
+	switch {
+	case duration < time.Minute:
+		return "just now"
+	case duration < time.Hour:
+		mins := int(duration.Minutes())
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	case duration < 24*time.Hour:
+		hours := int(duration.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	default:
+		days := int(duration.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
 }
