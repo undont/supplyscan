@@ -470,6 +470,35 @@ func TestFindLockfiles_SkipsHiddenDirs(t *testing.T) {
 	}
 }
 
+func TestFindLockfiles_DotPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create lockfile in the directory
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change to the temp directory and search using "."
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+
+	lockfiles, err := FindLockfiles(".", false)
+	if err != nil {
+		t.Fatalf("FindLockfiles(\".\") error = %v", err)
+	}
+
+	if len(lockfiles) != 1 {
+		t.Errorf("FindLockfiles(\".\") found %d files, want 1", len(lockfiles))
+	}
+}
+
 func TestExtractPackageName_NPM(t *testing.T) {
 	tests := []struct {
 		path string

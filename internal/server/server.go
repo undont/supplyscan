@@ -67,7 +67,7 @@ type statusOutput struct {
 type scanInput struct {
 	Path       string `json:"path" jsonschema:"path to the project directory to scan"`
 	Recursive  bool   `json:"recursive,omitempty" jsonschema:"scan subdirectories for lockfiles"`
-	IncludeDev bool   `json:"include_dev,omitempty" jsonschema:"include dev dependencies in scan"`
+	IncludeDev *bool  `json:"include_dev,omitempty" jsonschema:"include dev dependencies in scan (default: true)"`
 }
 
 type scanOutput struct {
@@ -114,10 +114,16 @@ func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolPar
 		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, fmt.Errorf("path is required")
 	}
 
+	// Default to including dev dependencies (matches CLI behaviour)
+	includeDev := true
+	if input.IncludeDev != nil {
+		includeDev = *input.IncludeDev
+	}
+
 	result, err := scan.Scan(scanner.ScanOptions{
 		Path:       input.Path,
 		Recursive:  input.Recursive,
-		IncludeDev: input.IncludeDev,
+		IncludeDev: includeDev,
 	})
 	if err != nil {
 		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, err

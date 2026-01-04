@@ -44,13 +44,17 @@ func DetectAndParse(path string) (Lockfile, error) {
 
 // shouldSkipDir determines if a directory should be skipped during the walk.
 func shouldSkipDir(name, path, rootDir string, recursive bool) bool {
+	// Never skip the root directory itself
+	if path == rootDir {
+		return false
+	}
 	if name == "node_modules" {
 		return true
 	}
 	if name != "" && name[0] == '.' {
 		return true
 	}
-	if !recursive && path != rootDir {
+	if !recursive {
 		return true
 	}
 	return false

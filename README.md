@@ -1,19 +1,27 @@
 # supplyscan
 
+[![GitHub Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
 
-A Go-based MCP (Model Context Protocol) server that scans JavaScript ecosystem lockfiles for supply chain compromises and known vulnerabilities.
+[![macOS](https://img.shields.io/badge/macOS-black?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-0078D4?style=flat&logo=windows&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/seanhalberthal/supplyscan/pkgs/container/supplyscan)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg?style=flat)](https://modelcontextprotocol.io)
 
-Being implemented in Go rather than as an npm package makes it immune to npm supply chain attacks by design.
+A security scanner for JavaScript ecosystem lockfiles that detects supply chain compromises and known vulnerabilities. Works as a standalone CLI tool or as an MCP server for AI agent integration.
+
+Built in Go rather than as an npm package, making it immune to npm supply chain attacks by design.
 
 ## Features
 
 - **Supply chain detection**: Identifies compromised packages by aggregating multiple IOC sources (DataDog, GitHub Advisory Database)
 - **Vulnerability scanning**: Integrates with npm audit API to find known CVEs
 - **Multi-format support**: Parses lockfiles from npm, Yarn (classic & berry), pnpm, Bun, and Deno
-- **Dual mode**: Runs as an MCP server or standalone CLI tool
+- **Dual interface**: Standalone CLI with styled output, or MCP server for AI agents
+- **CI/CD friendly**: JSON output mode for scripting and automation
 - **Per-source caching**: Each IOC source cached independently with configurable TTL
 
 ## Supported Lockfiles
@@ -27,14 +35,20 @@ Being implemented in Go rather than as an npm package makes it immune to npm sup
 | Bun | `bun.lock` |
 | Deno | `deno.lock` |
 
-## MCP Quick Start
+## Quick Start
 
 ```bash
-go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
-claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
+# Install
+go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
+
+# Scan current directory
+supplyscan scan
+
+# Check a specific package
+supplyscan check lodash 4.17.20
 ```
 
-Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
+Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
 
 ## Installation
 
@@ -73,70 +87,12 @@ go build -o supplyscan ./cmd/supplyscan
 mv supplyscan /usr/local/bin/
 ```
 
-## Configuration
+## CLI Usage
 
-### Claude Code
-
-```bash
-claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
-```
-
-### Claude Desktop / Cursor / Other Clients
-
-Add to your MCP config file:
-
-```json
-{
-  "mcpServers": {
-    "mcp-supplyscan": {
-      "command": "supplyscan",
-      "args": ["--mcp"]
-    }
-  }
-}
-```
-
-That's it. No additional configuration required.
-
-## MCP Tools
-
-### `supplyscan_status`
-
-Get scanner version, IOC database info, and supported lockfile formats.
-
-### `supplyscan_scan`
-
-Scan a project directory for supply chain compromises and known vulnerabilities.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | string | Path to the project directory |
-| `recursive` | boolean | Scan subdirectories for lockfiles |
-| `include_dev` | boolean | Include dev dependencies |
-
-### `supplyscan_check`
-
-Check a single package@version for supply chain compromises and vulnerabilities.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `package` | string | Package name |
-| `version` | string | Package version |
-
-### `supplyscan_refresh`
-
-Update the IOC database from upstream sources.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `force` | boolean | Force refresh even if cache is fresh |
-
-## CLI Mode
-
-The binary runs as a standalone CLI tool by default.
+The CLI is the default mode—no flags required.
 
 ```bash
-# Scan current directory (default)
+# Scan current directory
 supplyscan scan
 
 # Scan specific path recursively
@@ -167,13 +123,71 @@ supplyscan check lodash 4.17.20 --json
 supplyscan help
 ```
 
-### MCP Server Mode
+## MCP Server Integration
 
-To run as an MCP server (for AI agent integration):
+For AI agent integration (Claude Code, Cursor, etc.), supplyscan runs as an MCP server with the `--mcp` flag.
+
+### Claude Code Quick Start
 
 ```bash
-supplyscan --mcp
+go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
+claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
+
+Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
+
+### Claude Code (Manual)
+
+If you've already installed supplyscan:
+
+```bash
+claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
+```
+
+### Claude Desktop / Cursor / Other Clients
+
+Add to your MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "mcp-supplyscan": {
+      "command": "supplyscan",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `supplyscan_status` | Scanner version, IOC database info, supported lockfiles |
+| `supplyscan_scan` | Scan project directory for compromises and vulnerabilities |
+| `supplyscan_check` | Check single package@version |
+| `supplyscan_refresh` | Update IOC database from upstream sources |
+
+#### `supplyscan_scan` Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Path to the project directory |
+| `recursive` | boolean | Scan subdirectories for lockfiles |
+| `include_dev` | boolean | Include dev dependencies |
+
+#### `supplyscan_check` Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `package` | string | Package name |
+| `version` | string | Package version |
+
+#### `supplyscan_refresh` Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `force` | boolean | Force refresh even if cache is fresh |
 
 ## Updating
 
@@ -203,7 +217,19 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 
 If you prefer containerised execution, supplyscan is available as a Docker image. Note that you must mount your project directory into the container.
 
-### Installation
+### CLI via Docker
+
+```bash
+# Scan a directory
+docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan:latest \
+  scan "$PWD"
+
+# Check a specific package (no mount needed)
+docker run --rm ghcr.io/seanhalberthal/supplyscan:latest \
+  check lodash 4.17.20
+```
+
+### MCP via Docker
 
 ```bash
 claude mcp add mcp-supplyscan --transport stdio -s user -- \
@@ -212,7 +238,7 @@ claude mcp add mcp-supplyscan --transport stdio -s user -- \
   ghcr.io/seanhalberthal/supplyscan:latest --mcp
 ```
 
-### Manual Configuration
+Or add to your MCP config file:
 
 ```json
 {
@@ -232,21 +258,6 @@ claude mcp add mcp-supplyscan --transport stdio -s user -- \
 ```
 
 Replace `/path/to/your/projects` with the directory containing your projects. The mount uses the same path inside the container so file paths work seamlessly.
-
-### CLI via Docker
-
-```bash
-# Scan a directory
-docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan:latest \
-  scan "$PWD"
-
-# Check a specific package (no mount needed)
-docker run --rm ghcr.io/seanhalberthal/supplyscan:latest \
-  check lodash 4.17.20
-
-# Run as MCP server
-docker run --rm -i ghcr.io/seanhalberthal/supplyscan:latest --mcp
-```
 
 </details>
 

@@ -89,11 +89,12 @@ func TestHandleScan_ValidPath(t *testing.T) {
 		}`,
 	})
 
+	includeDev := true
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
 			Path:       projectDir,
 			Recursive:  false,
-			IncludeDev: true,
+			IncludeDev: &includeDev,
 		},
 	}
 
@@ -200,6 +201,89 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 	recursiveResult := getStructuredContent(t, result)
 	if recursiveResult.Summary.LockfilesScanned != 2 {
 		t.Errorf("Recursive: LockfilesScanned = %d, want 2", recursiveResult.Summary.LockfilesScanned)
+	}
+}
+
+func TestHandleScan_IncludeDevDefaultsToTrue(t *testing.T) {
+	setupTestScanner(t)
+
+	// Create a lockfile with both dev and non-dev dependencies
+	projectDir := createTestProject(t, map[string]string{
+		"package-lock.json": `{
+			"name": "test",
+			"lockfileVersion": 3,
+			"packages": {
+				"node_modules/lodash": {"version": "4.17.21", "dev": false},
+				"node_modules/jest": {"version": "29.0.0", "dev": true}
+			}
+		}`,
+	})
+
+	// Call handleScan with IncludeDev set to nil (omitted)
+	params := &mcp.CallToolParamsFor[scanInput]{
+		Arguments: scanInput{
+			Path:       projectDir,
+			Recursive:  false,
+			IncludeDev: nil, // Explicitly nil to test default behaviour
+		},
+	}
+
+	result, err := handleScan(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("handleScan() error = %v", err)
+	}
+
+	if result.IsError {
+		t.Error("handleScan() returned IsError = true")
+	}
+
+	scanResult := getStructuredContent(t, result)
+
+	// With default behaviour (IncludeDev=true), both dependencies should be counted
+	if scanResult.Summary.TotalDependencies != 2 {
+		t.Errorf("TotalDependencies = %d, want 2 (dev dependencies should be included by default)", scanResult.Summary.TotalDependencies)
+	}
+}
+
+func TestHandleScan_IncludeDevExplicitlyFalse(t *testing.T) {
+	setupTestScanner(t)
+
+	// Create a lockfile with both dev and non-dev dependencies
+	projectDir := createTestProject(t, map[string]string{
+		"package-lock.json": `{
+			"name": "test",
+			"lockfileVersion": 3,
+			"packages": {
+				"node_modules/lodash": {"version": "4.17.21", "dev": false},
+				"node_modules/jest": {"version": "29.0.0", "dev": true}
+			}
+		}`,
+	})
+
+	// Call handleScan with IncludeDev explicitly set to false
+	includeDev := false
+	params := &mcp.CallToolParamsFor[scanInput]{
+		Arguments: scanInput{
+			Path:       projectDir,
+			Recursive:  false,
+			IncludeDev: &includeDev,
+		},
+	}
+
+	result, err := handleScan(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("handleScan() error = %v", err)
+	}
+
+	if result.IsError {
+		t.Error("handleScan() returned IsError = true")
+	}
+
+	scanResult := getStructuredContent(t, result)
+
+	// With IncludeDev=false, only non-dev dependency should be counted
+	if scanResult.Summary.TotalDependencies != 1 {
+		t.Errorf("TotalDependencies = %d, want 1 (dev dependencies should be excluded)", scanResult.Summary.TotalDependencies)
 	}
 }
 
@@ -349,10 +433,11 @@ func TestHandleRefresh_Force(t *testing.T) {
 // TestInputTypes verifies the input structs are properly structured.
 func TestInputTypes(t *testing.T) {
 	// Verify scanInput fields
+	includeDev := true
 	si := scanInput{
 		Path:       "/test",
 		Recursive:  true,
-		IncludeDev: true,
+		IncludeDev: &includeDev,
 	}
 	if si.Path != "/test" {
 		t.Errorf("scanInput.Path = %q, want /test", si.Path)
