@@ -374,3 +374,179 @@ func BenchmarkStripComments_NoComments(b *testing.B) {
 		StripComments(input)
 	}
 }
+
+func TestStripComments_TrailingCommas(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "trailing comma in object",
+			input: `{"key": "value",}`,
+			want:  `{"key": "value"}`,
+		},
+		{
+			name:  "trailing comma in array",
+			input: `["a", "b",]`,
+			want:  `["a", "b"]`,
+		},
+		{
+			name:  "trailing comma with whitespace",
+			input: `{"key": "value",   }`,
+			want:  `{"key": "value"   }`,
+		},
+		{
+			name:  "trailing comma with newline",
+			input: "{\n\"key\": \"value\",\n}",
+			want:  "{\n\"key\": \"value\"\n}",
+		},
+		{
+			name:  "multiple trailing commas",
+			input: `{"a": {"b": 1,},}`,
+			want:  `{"a": {"b": 1}}`,
+		},
+		{
+			name:  "trailing comma in nested array",
+			input: `{"arr": [1, 2, 3,]}`,
+			want:  `{"arr": [1, 2, 3]}`,
+		},
+		{
+			name:  "no trailing comma",
+			input: `{"key": "value"}`,
+			want:  `{"key": "value"}`,
+		},
+		{
+			name:  "comma in string preserved",
+			input: `{"key": "a,}"}`,
+			want:  `{"key": "a,}"}`,
+		},
+		{
+			name:  "trailing comma after nested object",
+			input: `{"a": {"b": 1}, "c": 2,}`,
+			want:  `{"a": {"b": 1}, "c": 2}`,
+		},
+		{
+			name:  "escaped quote in string with trailing comma",
+			input: `{"key": "value with \" quote",}`,
+			want:  `{"key": "value with \" quote"}`,
+		},
+		{
+			name:  "malformed JSON - trailing comma without closing bracket",
+			input: `{"key": "value",`,
+			want:  `{"key": "value",`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(StripComments([]byte(tt.input)))
+			if got != tt.want {
+				t.Errorf("StripComments() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripComments_TrailingCommasValidJSON(t *testing.T) {
+	// Test with realistic bun.lock content that has trailing commas
+	input := `{
+		"lockfileVersion": 1,
+		"workspaces": {
+			"": {
+				"name": "test",
+				"dependencies": {
+					"lodash": "^4.17.21",
+					"express": "^4.18.2",
+				},
+				"devDependencies": {
+					"typescript": "^5.0.0",
+				},
+			},
+		},
+		"packages": {
+			"lodash": ["lodash@4.17.21", "", {}, "sha512-..."],
+		},
+	}`
+
+	got := StripComments([]byte(input))
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(got, &result); err != nil {
+		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
+	}
+
+	if result["lockfileVersion"] != float64(1) {
+		t.Errorf("lockfileVersion = %v, want 1", result["lockfileVersion"])
+	}
+}
+
+func TestStripComments_CommentsAndTrailingCommas(t *testing.T) {
+	// Test with both comments and trailing commas
+	input := `{
+		// comment
+		"a": 1,
+		"b": 2, /* inline */
+		"c": 3,
+	}`
+
+	got := StripComments([]byte(input))
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(got, &result); err != nil {
+		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
+	}
+
+	if result["a"] != float64(1) || result["b"] != float64(2) || result["c"] != float64(3) {
+		t.Errorf("Unexpected values: %v", result)
+	}
+}
+
+func TestIsEscaped(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		pos   int
+		want  bool
+	}{
+		{
+			name:  "not escaped",
+			input: `"hello"`,
+			pos:   6,
+			want:  false,
+		},
+		{
+			name:  "escaped quote",
+			input: `"he\"llo"`,
+			pos:   4,
+			want:  true,
+		},
+		{
+			name:  "double backslash not escaped",
+			input: `"he\\"`,
+			pos:   5,
+			want:  false,
+		},
+		{
+			name:  "triple backslash escaped",
+			input: `"he\\\"`,
+			pos:   6,
+			want:  true,
+		},
+		{
+			name:  "position zero",
+			input: `"`,
+			pos:   0,
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isEscaped([]byte(tt.input), tt.pos)
+			if got != tt.want {
+				t.Errorf("isEscaped() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
