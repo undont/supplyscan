@@ -54,3 +54,6 @@ tmp/
 
 # Go vendor
 vendor/
+
+# Code review
+CODE_REVIEW.md
