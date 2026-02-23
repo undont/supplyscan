@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [![macOS](https://img.shields.io/badge/macOS-black?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
@@ -17,7 +17,7 @@ Built in Go rather than as an npm package, making it immune to npm supply chain 
 
 ## Features
 
-- **Supply chain detection**: Identifies compromised packages by aggregating multiple IOC sources (DataDog, GitHub Advisory Database)
+- **Supply chain detection**: Identifies compromised packages by aggregating multiple IOC sources (DataDog, GitHub Advisory Database, OSV.dev)
 - **Vulnerability scanning**: Integrates with npm audit API to find known CVEs
 - **Multi-format support**: Parses lockfiles from npm, Yarn (classic & berry), pnpm, Bun, and Deno
 - **Dual interface**: Standalone CLI with styled output, or MCP server for AI agents
@@ -48,7 +48,7 @@ supplyscan scan
 supplyscan check lodash 4.17.20
 ```
 
-Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
+Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
 
 ## Installation
 
@@ -134,7 +134,7 @@ go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
 claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
 
-Restart Claude Code to activate. Requires Go 1.23+ and `$GOPATH/bin` in your PATH.
+Restart Claude Code to activate. Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
 
 ### Claude Code (Manual)
 
@@ -205,6 +205,7 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 
 - **DataDog IOC Database**: [Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) - Shai-Hulud campaign packages
 - **GitHub Advisory Database**: [Security Advisories](https://github.com/advisories) - npm malware advisories (GHSA)
+- **OSV.dev**: [Open Source Vulnerabilities](https://osv.dev) - npm malware entries from the MAL ecosystem
 
 ### Vulnerability Data
 
