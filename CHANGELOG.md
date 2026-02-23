@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/seanhalberthal/supplyscan/compare/v1.6.0...v1.7.0)
+
+### New
+
+- Add OSV.dev as third IOC source for npm malware detection
+- Switch npm audit to bulk advisory API for improved performance
+- Add version range matching for IOC entries (handles `>= 0` patterns)
+
+### Updates
+
+- Extract Scanner interface for better testability
+- Pin golangci-lint version via `go run` (no local install required)
+- Add `make help` target
+
 ## [1.6.0](https://github.com/seanhalberthal/supplyscan/compare/v1.5.0...v1.6.0)
 
 ### Updates

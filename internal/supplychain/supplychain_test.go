@@ -147,8 +147,8 @@ func TestGetNamespaceWarning(t *testing.T) {
 	if warning == "" {
 		t.Error("GetNamespaceWarning() returned empty string")
 	}
-	if !strings.Contains(warning, "Shai-Hulud") {
-		t.Error("Warning should mention Shai-Hulud campaign")
+	if !strings.Contains(warning, "supply chain attack") {
+		t.Error("Warning should mention supply chain attack")
 	}
 }
 
@@ -419,6 +419,87 @@ func TestDetector_Refresh(t *testing.T) {
 
 	if result.PackagesCount != 1 {
 		t.Errorf("PackagesCount = %d, want 1", result.PackagesCount)
+	}
+}
+
+func TestVersionMatches(t *testing.T) {
+	tests := []struct {
+		name             string
+		storedVersion    string
+		installedVersion string
+		want             bool
+	}{
+		// Exact matches
+		{"exact match", "1.0.0", "1.0.0", true},
+		{"exact mismatch", "1.0.0", "2.0.0", false},
+
+		// Wildcard ranges (all versions compromised — common for typosquatting malware)
+		{"all versions >= 0", ">= 0", "1.2.3", true},
+		{"all versions >=0 no space", ">=0", "5.0.0", true},
+		{"all versions wildcard", "*", "3.0.0", true},
+
+		// Should not match unrecognised ranges (avoid false positives)
+		{"range not matched", ">= 1.0.0", "0.9.0", false},
+		{"range not matched 2", "< 2.0.0", "1.5.0", false},
+		{"empty stored", "", "1.0.0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := versionMatches(tt.storedVersion, tt.installedVersion); got != tt.want {
+				t.Errorf("versionMatches(%q, %q) = %v, want %v", tt.storedVersion, tt.installedVersion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetector_CheckPackage_WildcardVersion(t *testing.T) {
+	// Simulate a typosquatting package where all versions are malware (">= 0")
+	db := &types.IOCDatabase{
+		Packages: map[string]types.CompromisedPackage{
+			"typosquat-pkg": {
+				Name:      "typosquat-pkg",
+				Versions:  []string{">= 0"}, // All versions
+				Sources:   []string{"github"},
+				Campaigns: []string{"github-advisory"},
+			},
+		},
+		LastUpdated: time.Now().UTC().Format(time.RFC3339),
+		Sources:     []string{"github"},
+	}
+
+	detector := createTestDetectorWithDB(t, db)
+
+	// Any version should be flagged
+	finding := detector.CheckPackage("typosquat-pkg", "1.0.0")
+	if finding == nil {
+		t.Error("Expected finding for typosquat-pkg@1.0.0 (all versions compromised)")
+	}
+
+	finding2 := detector.CheckPackage("typosquat-pkg", "99.99.99")
+	if finding2 == nil {
+		t.Error("Expected finding for typosquat-pkg@99.99.99 (all versions compromised)")
+	}
+}
+
+func TestIsAtRiskNamespace_S1ngularity(t *testing.T) {
+	// Verify s1ngularity campaign namespaces are detected
+	tests := []struct {
+		packageName string
+		want        bool
+	}{
+		{"@nx/devkit", true},
+		{"@nx/workspace", true},
+		{"@nrwl/devkit", true},
+		{"@nrwl/workspace", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.packageName, func(t *testing.T) {
+			if got := isAtRiskNamespace(tt.packageName); got != tt.want {
+				t.Errorf("isAtRiskNamespace(%q) = %v, want %v", tt.packageName, got, tt.want)
+			}
+		})
 	}
 }
 

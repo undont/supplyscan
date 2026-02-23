@@ -2,8 +2,7 @@ package server
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"fmt"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,43 +11,89 @@ import (
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
+// mockScanner implements scanner.Scanner for testing without network calls.
+type mockScanner struct {
+	scanResult    *types.ScanResult
+	scanErr       error
+	checkResult   *types.CheckResult
+	checkErr      error
+	refreshResult *types.RefreshResult
+	refreshErr    error
+	status        types.IOCDatabaseStatus
+}
+
+func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
+	return m.scanResult, m.scanErr
+}
+
+func (m *mockScanner) CheckPackage(_, _ string) (*types.CheckResult, error) {
+	return m.checkResult, m.checkErr
+}
+
+func (m *mockScanner) Refresh(_ bool) (*types.RefreshResult, error) {
+	return m.refreshResult, m.refreshErr
+}
+
+func (m *mockScanner) GetStatus() types.IOCDatabaseStatus {
+	return m.status
+}
+
+// setupMockScanner sets the package-level scan variable to a mock for testing.
+func setupMockScanner(mock *mockScanner) {
+	scan = mock
+}
+
+// newDefaultMock returns a mockScanner with sensible defaults.
+func newDefaultMock() *mockScanner {
+	return &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 1,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 1},
+			},
+		},
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+		refreshResult: &types.RefreshResult{
+			Updated:       false,
+			PackagesCount: 100,
+			VersionsCount: 200,
+			CacheAgeHours: 1,
+		},
+		status: types.IOCDatabaseStatus{
+			Packages:    100,
+			Versions:    200,
+			LastUpdated: "2024-01-01T00:00:00Z",
+			Sources:     []string{"datadog"},
+		},
+	}
+}
+
 // getStructuredContent returns the StructuredContent from a result.
 func getStructuredContent[T any](t *testing.T, result *mcp.CallToolResultFor[T]) T {
 	t.Helper()
 	return result.StructuredContent
 }
 
-// setupTestScanner initialises the package-level scan variable for testing.
-func setupTestScanner(t *testing.T) {
-	t.Helper()
-	s, err := scanner.New()
-	if err != nil {
-		t.Fatalf("Failed to create scanner: %v", err)
-	}
-	scan = s
-}
-
-// createTestProject creates a temporary directory with the given lockfiles.
-func createTestProject(t *testing.T, lockfiles map[string]string) string {
-	t.Helper()
-	tmpDir := t.TempDir()
-
-	for name, content := range lockfiles {
-		path := filepath.Join(tmpDir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	return tmpDir
-}
-
 // TestHandleStatus tests the status handler.
 func TestHandleStatus(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[statusInput]{
 		Arguments: statusInput{},
@@ -77,22 +122,13 @@ func TestHandleStatus(t *testing.T) {
 }
 
 func TestHandleScan_ValidPath(t *testing.T) {
-	setupTestScanner(t)
-
-	projectDir := createTestProject(t, map[string]string{
-		"package-lock.json": `{
-			"name": "test",
-			"lockfileVersion": 3,
-			"packages": {
-				"node_modules/lodash": {"version": "4.17.21"}
-			}
-		}`,
-	})
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	includeDev := true
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
-			Path:       projectDir,
+			Path:       "/tmp/test",
 			Recursive:  false,
 			IncludeDev: &includeDev,
 		},
@@ -117,7 +153,8 @@ func TestHandleScan_ValidPath(t *testing.T) {
 }
 
 func TestHandleScan_EmptyPath(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
@@ -139,7 +176,10 @@ func TestHandleScan_EmptyPath(t *testing.T) {
 }
 
 func TestHandleScan_InvalidPath(t *testing.T) {
-	setupTestScanner(t)
+	mock := &mockScanner{
+		scanErr: fmt.Errorf("stat /nonexistent/path/that/does/not/exist: no such file or directory"),
+	}
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
@@ -158,25 +198,24 @@ func TestHandleScan_InvalidPath(t *testing.T) {
 }
 
 func TestHandleScan_RecursiveOption(t *testing.T) {
-	setupTestScanner(t)
+	// Non-recursive scan: 1 lockfile
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 1,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain:     types.SupplyChainResult{Findings: []types.SupplyChainFinding{}, Warnings: []types.SupplyChainWarning{}},
+			Vulnerabilities: types.VulnerabilityResult{Findings: []types.VulnerabilityFinding{}},
+			Lockfiles:       []types.LockfileInfo{{Path: "package-lock.json", Type: "npm", Dependencies: 1}},
+		},
+	}
+	setupMockScanner(mock)
 
-	projectDir := createTestProject(t, map[string]string{
-		"package-lock.json": `{
-			"name": "root",
-			"lockfileVersion": 3,
-			"packages": {"node_modules/a": {"version": "1.0.0"}}
-		}`,
-		"packages/sub/package-lock.json": `{
-			"name": "sub",
-			"lockfileVersion": 3,
-			"packages": {"node_modules/b": {"version": "1.0.0"}}
-		}`,
-	})
-
-	// Non-recursive scan
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
-			Path:      projectDir,
+			Path:      "/tmp/test",
 			Recursive: false,
 		},
 	}
@@ -191,7 +230,21 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 		t.Errorf("Non-recursive: LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
 
-	// Recursive scan
+	// Recursive scan: 2 lockfiles
+	mock.scanResult = &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  2,
+			TotalDependencies: 2,
+			Issues:            types.IssueCounts{},
+		},
+		SupplyChain:     types.SupplyChainResult{Findings: []types.SupplyChainFinding{}, Warnings: []types.SupplyChainWarning{}},
+		Vulnerabilities: types.VulnerabilityResult{Findings: []types.VulnerabilityFinding{}},
+		Lockfiles: []types.LockfileInfo{
+			{Path: "package-lock.json", Type: "npm", Dependencies: 1},
+			{Path: "packages/sub/package-lock.json", Type: "npm", Dependencies: 1},
+		},
+	}
+
 	params.Arguments.Recursive = true
 	result, err = handleScan(context.Background(), nil, params)
 	if err != nil {
@@ -205,24 +258,25 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 }
 
 func TestHandleScan_IncludeDevDefaultsToTrue(t *testing.T) {
-	setupTestScanner(t)
+	// When IncludeDev is nil (omitted), handler defaults to true,
+	// so the mock returns 2 deps (both dev and non-dev included).
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 2,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain:     types.SupplyChainResult{Findings: []types.SupplyChainFinding{}, Warnings: []types.SupplyChainWarning{}},
+			Vulnerabilities: types.VulnerabilityResult{Findings: []types.VulnerabilityFinding{}},
+			Lockfiles:       []types.LockfileInfo{{Path: "package-lock.json", Type: "npm", Dependencies: 2}},
+		},
+	}
+	setupMockScanner(mock)
 
-	// Create a lockfile with both dev and non-dev dependencies
-	projectDir := createTestProject(t, map[string]string{
-		"package-lock.json": `{
-			"name": "test",
-			"lockfileVersion": 3,
-			"packages": {
-				"node_modules/lodash": {"version": "4.17.21", "dev": false},
-				"node_modules/jest": {"version": "29.0.0", "dev": true}
-			}
-		}`,
-	})
-
-	// Call handleScan with IncludeDev set to nil (omitted)
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
-			Path:       projectDir,
+			Path:       "/tmp/test",
 			Recursive:  false,
 			IncludeDev: nil, // Explicitly nil to test default behaviour
 		},
@@ -238,33 +292,31 @@ func TestHandleScan_IncludeDevDefaultsToTrue(t *testing.T) {
 	}
 
 	scanResult := getStructuredContent(t, result)
-
-	// With default behaviour (IncludeDev=true), both dependencies should be counted
 	if scanResult.Summary.TotalDependencies != 2 {
 		t.Errorf("TotalDependencies = %d, want 2 (dev dependencies should be included by default)", scanResult.Summary.TotalDependencies)
 	}
 }
 
 func TestHandleScan_IncludeDevExplicitlyFalse(t *testing.T) {
-	setupTestScanner(t)
+	// When IncludeDev is explicitly false, mock returns 1 dep (dev excluded).
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 1,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain:     types.SupplyChainResult{Findings: []types.SupplyChainFinding{}, Warnings: []types.SupplyChainWarning{}},
+			Vulnerabilities: types.VulnerabilityResult{Findings: []types.VulnerabilityFinding{}},
+			Lockfiles:       []types.LockfileInfo{{Path: "package-lock.json", Type: "npm", Dependencies: 1}},
+		},
+	}
+	setupMockScanner(mock)
 
-	// Create a lockfile with both dev and non-dev dependencies
-	projectDir := createTestProject(t, map[string]string{
-		"package-lock.json": `{
-			"name": "test",
-			"lockfileVersion": 3,
-			"packages": {
-				"node_modules/lodash": {"version": "4.17.21", "dev": false},
-				"node_modules/jest": {"version": "29.0.0", "dev": true}
-			}
-		}`,
-	})
-
-	// Call handleScan with IncludeDev explicitly set to false
 	includeDev := false
 	params := &mcp.CallToolParamsFor[scanInput]{
 		Arguments: scanInput{
-			Path:       projectDir,
+			Path:       "/tmp/test",
 			Recursive:  false,
 			IncludeDev: &includeDev,
 		},
@@ -280,15 +332,14 @@ func TestHandleScan_IncludeDevExplicitlyFalse(t *testing.T) {
 	}
 
 	scanResult := getStructuredContent(t, result)
-
-	// With IncludeDev=false, only non-dev dependency should be counted
 	if scanResult.Summary.TotalDependencies != 1 {
 		t.Errorf("TotalDependencies = %d, want 1 (dev dependencies should be excluded)", scanResult.Summary.TotalDependencies)
 	}
 }
 
 func TestHandleCheck_ValidPackage(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[checkInput]{
 		Arguments: checkInput{
@@ -314,7 +365,8 @@ func TestHandleCheck_ValidPackage(t *testing.T) {
 }
 
 func TestHandleCheck_EmptyPackage(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[checkInput]{
 		Arguments: checkInput{
@@ -337,7 +389,8 @@ func TestHandleCheck_EmptyPackage(t *testing.T) {
 }
 
 func TestHandleCheck_EmptyVersion(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[checkInput]{
 		Arguments: checkInput{
@@ -360,7 +413,8 @@ func TestHandleCheck_EmptyVersion(t *testing.T) {
 }
 
 func TestHandleCheck_BothEmpty(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[checkInput]{
 		Arguments: checkInput{
@@ -384,7 +438,8 @@ func TestHandleCheck_BothEmpty(t *testing.T) {
 }
 
 func TestHandleRefresh(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[refreshInput]{
 		Arguments: refreshInput{
@@ -402,7 +457,6 @@ func TestHandleRefresh(t *testing.T) {
 	}
 
 	refreshResult := getStructuredContent(t, result)
-	// PackagesCount and VersionsCount should be >= 0
 	if refreshResult.PackagesCount < 0 {
 		t.Errorf("PackagesCount = %d, want >= 0", refreshResult.PackagesCount)
 	}
@@ -412,7 +466,14 @@ func TestHandleRefresh(t *testing.T) {
 }
 
 func TestHandleRefresh_Force(t *testing.T) {
-	setupTestScanner(t)
+	mock := newDefaultMock()
+	mock.refreshResult = &types.RefreshResult{
+		Updated:       true,
+		PackagesCount: 150,
+		VersionsCount: 300,
+		CacheAgeHours: 0,
+	}
+	setupMockScanner(mock)
 
 	params := &mcp.CallToolParamsFor[refreshInput]{
 		Arguments: refreshInput{

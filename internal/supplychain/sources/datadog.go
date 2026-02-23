@@ -71,7 +71,7 @@ func (s *DataDogSource) Fetch(ctx context.Context, client *http.Client) (*types.
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is the configured DataDog IOC endpoint
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch IOCs: %w", err)
 	}

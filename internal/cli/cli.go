@@ -22,7 +22,7 @@ var exitFunc = os.Exit
 var outputJSON bool
 
 // Run executes the CLI with the given scanner and arguments.
-func Run(scan *scanner.Scanner, args []string) {
+func Run(scan scanner.Scanner, args []string) {
 	// Parse global flags
 	args = parseGlobalFlags(args)
 
@@ -112,7 +112,7 @@ func parseScanFlags(args []string) scanOptions {
 	return opts
 }
 
-func runStatus(scan *scanner.Scanner) {
+func runStatus(scan scanner.Scanner) {
 	status := types.StatusResponse{
 		Version:            types.Version,
 		IOCDatabase:        scan.GetStatus(),
@@ -172,7 +172,7 @@ func printIOCSourceLine(source string, info types.SourceStatusInfo) {
 		formatWarning("(failed to fetch)"))
 }
 
-func runScan(scan *scanner.Scanner, path string, opts scanOptions) {
+func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 	var result *types.ScanResult
 	var err error
 
@@ -327,7 +327,7 @@ func printLockfiles(lockfiles []types.LockfileInfo) {
 	}
 }
 
-func runCheck(scan *scanner.Scanner, pkg, version string) {
+func runCheck(scan scanner.Scanner, pkg, version string) {
 	result, err := scan.CheckPackage(pkg, version)
 	if err != nil {
 		printStyledError("%v", err)
@@ -378,7 +378,7 @@ func runCheck(scan *scanner.Scanner, pkg, version string) {
 	}
 }
 
-func runRefresh(scan *scanner.Scanner, force bool) {
+func runRefresh(scan scanner.Scanner, force bool) {
 	var result *types.RefreshResult
 	var err error
 

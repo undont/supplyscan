@@ -8,6 +8,7 @@ import (
 // Packages from these namespaces trigger warnings even if the installed
 // version appears safe.
 var atRiskNamespaces = []string{
+	// Shai-Hulud campaign (September-November 2025)
 	"@ctrl",
 	"@nativescript-community",
 	"@crowdstrike",
@@ -18,6 +19,9 @@ var atRiskNamespaces = []string{
 	"@zapier",
 	"@art-ws",
 	"@ngx",
+	// s1ngularity campaign (August 2025) — credential harvesting via Nx build system
+	"@nx",
+	"@nrwl",
 }
 
 // isAtRiskNamespace checks if a package name belongs to an at-risk namespace.
@@ -44,5 +48,5 @@ func isAtRiskNamespace(packageName string) bool {
 
 // getNamespaceWarning returns a warning message for an at-risk namespace.
 func getNamespaceWarning(packageName string) string {
-	return "Namespace '" + packageName + "' had compromised packages in Shai-Hulud campaign. This version appears safe but verify."
+	return "Namespace '" + packageName + "' had compromised packages in a supply chain attack. This version appears safe but verify."
 }

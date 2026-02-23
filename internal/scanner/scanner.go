@@ -8,20 +8,28 @@ import (
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
-// Scanner orchestrates the complete security scan.
-type Scanner struct {
+// Scanner defines the interface for security scanning operations.
+type Scanner interface {
+	Scan(ScanOptions) (*types.ScanResult, error)
+	CheckPackage(name, version string) (*types.CheckResult, error)
+	Refresh(force bool) (*types.RefreshResult, error)
+	GetStatus() types.IOCDatabaseStatus
+}
+
+// defaultScanner orchestrates the complete security scan.
+type defaultScanner struct {
 	detector    *supplychain.Detector
 	auditClient *audit.Client
 }
 
 // New creates a new scanner.
-func New() (*Scanner, error) {
+func New() (Scanner, error) {
 	detector, err := supplychain.NewDetector()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Scanner{
+	return &defaultScanner{
 		detector:    detector,
 		auditClient: audit.NewClient(),
 	}, nil
@@ -35,7 +43,7 @@ type ScanOptions struct {
 }
 
 // Scan performs a full security scan on a project.
-func (s *Scanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
+func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 	// Ensure IOC database is loaded (continue without it if unavailable)
 	_ = s.detector.EnsureLoaded()
 
@@ -110,7 +118,7 @@ func (s *Scanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 }
 
 // CheckPackage checks a single package for issues.
-func (s *Scanner) CheckPackage(name, version string) (*types.CheckResult, error) {
+func (s *defaultScanner) CheckPackage(name, version string) (*types.CheckResult, error) {
 	// Ensure IOC database is loaded (continue without it if unavailable)
 	_ = s.detector.EnsureLoaded()
 
@@ -137,12 +145,12 @@ func (s *Scanner) CheckPackage(name, version string) (*types.CheckResult, error)
 }
 
 // Refresh refreshes the IOC database.
-func (s *Scanner) Refresh(force bool) (*types.RefreshResult, error) {
+func (s *defaultScanner) Refresh(force bool) (*types.RefreshResult, error) {
 	return s.detector.Refresh(force)
 }
 
 // GetStatus returns the current scanner status.
-func (s *Scanner) GetStatus() types.IOCDatabaseStatus {
+func (s *defaultScanner) GetStatus() types.IOCDatabaseStatus {
 	return s.detector.GetStatus()
 }
 

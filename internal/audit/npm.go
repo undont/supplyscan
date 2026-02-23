@@ -3,17 +3,21 @@ package audit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
-// defaultEndpoint is the npm registry audit endpoint.
-const defaultEndpoint = "https://registry.npmjs.org/-/npm/v1/security/audits"
+// defaultEndpoint is the npm bulk advisory endpoint (npm v7+).
+const defaultEndpoint = "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk"
+
+// defaultTimeout is the HTTP client timeout.
+const defaultTimeout = 30 * time.Second
 
 // Client handles npm audit API requests.
 type Client struct {
@@ -41,7 +45,7 @@ func withEndpoint(endpoint string) Option {
 // NewClient creates a new npm audit client.
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: defaultTimeout},
 		endpoint:   defaultEndpoint,
 	}
 	for _, opt := range opts {
@@ -50,61 +54,25 @@ func NewClient(opts ...Option) *Client {
 	return c
 }
 
-// request is the request body for the npm audit API.
-type request struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Requires     map[string]string `json:"requires"`
-	Dependencies map[string]dep    `json:"dependencies"`
+// bulkRequest maps package names to their installed versions for the bulk advisory API.
+type bulkRequest map[string][]string
+
+// bulkAdvisory represents an advisory from the bulk advisory endpoint.
+type bulkAdvisory struct {
+	ID                 int      `json:"id"`
+	URL                string   `json:"url"`
+	Title              string   `json:"title"`
+	ModuleName         string   `json:"module_name"`
+	Severity           string   `json:"severity"`
+	VulnerableVersions string   `json:"vulnerable_versions"`
+	PatchedVersions    string   `json:"patched_versions"`
+	Range              string   `json:"range"`
+	GHSAID             string   `json:"github_advisory_id"`
+	CWE                []string `json:"cwe"`
 }
 
-// dep represents a dependency in the audit request.
-type dep struct {
-	Version  string            `json:"version"`
-	Requires map[string]string `json:"requires,omitempty"`
-}
-
-// response is the response from the npm audit API.
-type response struct {
-	Advisories map[string]advisory `json:"advisories"`
-	Metadata   metadata            `json:"metadata"`
-}
-
-// advisory represents a security advisory.
-type advisory struct {
-	ID                 int       `json:"id"`
-	Title              string    `json:"title"`
-	ModuleName         string    `json:"module_name"`
-	Severity           string    `json:"severity"`
-	URL                string    `json:"url"`
-	VulnerableVersions string    `json:"vulnerable_versions"`
-	PatchedVersions    string    `json:"patched_versions"`
-	Overview           string    `json:"overview"`
-	GHSAID             string    `json:"github_advisory_id"`
-	CWE                []string  `json:"cwe"`
-	Findings           []finding `json:"findings"`
-}
-
-// finding represents where a vulnerability was found.
-type finding struct {
-	Version string   `json:"version"`
-	Paths   []string `json:"paths"`
-}
-
-// metadata contains metadata about the audit.
-type metadata struct {
-	Vulnerabilities vulnerabilityCounts `json:"vulnerabilities"`
-	Dependencies    int                 `json:"dependencies"`
-}
-
-// vulnerabilityCounts breaks down vulnerabilities by severity.
-type vulnerabilityCounts struct {
-	Info     int `json:"info"`
-	Low      int `json:"low"`
-	Moderate int `json:"moderate"`
-	High     int `json:"high"`
-	Critical int `json:"critical"`
-}
+// bulkResponse maps package names to their advisories.
+type bulkResponse map[string][]bulkAdvisory
 
 // AuditDependencies audits a list of dependencies.
 func (c *Client) AuditDependencies(deps []types.Dependency) ([]types.VulnerabilityFinding, error) {
@@ -112,17 +80,17 @@ func (c *Client) AuditDependencies(deps []types.Dependency) ([]types.Vulnerabili
 		return nil, nil
 	}
 
-	// Build the audit request
-	req := buildAuditRequest(deps)
+	// Build the bulk request
+	req := buildBulkRequest(deps)
 
 	// Make the request
-	resp, err := c.doAudit(req)
+	resp, err := c.doBulkAudit(req, deps)
 	if err != nil {
 		return nil, err
 	}
 
 	// Convert to vulnerability findings
-	return convertAdvisories(resp.Advisories), nil
+	return convertBulkAdvisories(resp, deps), nil
 }
 
 // AuditSinglePackage audits a single package.
@@ -147,34 +115,26 @@ func (c *Client) AuditSinglePackage(name, version string) ([]types.Vulnerability
 	return infos, nil
 }
 
-// buildAuditRequest builds the npm audit request from dependencies.
-func buildAuditRequest(deps []types.Dependency) *request {
-	requires := make(map[string]string)
-	dependencies := make(map[string]dep)
-
+// buildBulkRequest builds the bulk advisory request from dependencies.
+func buildBulkRequest(deps []types.Dependency) bulkRequest {
+	req := make(bulkRequest)
 	for _, d := range deps {
-		requires[d.Name] = d.Version
-		dependencies[d.Name] = dep{
-			Version: d.Version,
-		}
+		req[d.Name] = append(req[d.Name], d.Version)
 	}
-
-	return &request{
-		Name:         "audit-check",
-		Version:      "1.0.0",
-		Requires:     requires,
-		Dependencies: dependencies,
-	}
+	return req
 }
 
-// doAudit makes the HTTP request to the npm audit API.
-func (c *Client) doAudit(req *request) (*response, error) {
+// doBulkAudit makes the HTTP request to the npm bulk advisory API.
+func (c *Client) doBulkAudit(req bulkRequest, deps []types.Dependency) (bulkResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal audit request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.endpoint, bytes.NewReader(body))
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -182,58 +142,54 @@ func (c *Client) doAudit(req *request) (*response, error) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // URL is the configured npm audit endpoint
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		closeErr := Body.Close()
-		if closeErr != nil {
-			fmt.Printf("Failed to close audit response body: %v\n", closeErr)
-		}
-	}(resp.Body)
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
 		return nil, fmt.Errorf("audit API returned status %d", resp.StatusCode)
 	}
 
-	var auditResp response
-	if err := json.NewDecoder(resp.Body).Decode(&auditResp); err != nil {
+	var bulkResp bulkResponse
+	if err := json.NewDecoder(resp.Body).Decode(&bulkResp); err != nil {
+		// If bulk endpoint fails, the response may not be valid JSON.
+		// This can happen if the registry doesn't support the bulk endpoint.
 		return nil, fmt.Errorf("failed to decode audit response: %w", err)
 	}
 
-	return &auditResp, nil
+	return bulkResp, nil
 }
 
-// convertAdvisories converts npm advisories to vulnerability findings.
-func convertAdvisories(advisories map[string]advisory) []types.VulnerabilityFinding {
+// convertBulkAdvisories converts bulk advisory response to vulnerability findings.
+func convertBulkAdvisories(resp bulkResponse, deps []types.Dependency) []types.VulnerabilityFinding {
 	findings := make([]types.VulnerabilityFinding, 0)
 
-	for _, adv := range advisories { //nolint:gocritic // rangeValCopy: can't avoid copy when ranging over map values
-		// Get affected versions from findings
-		for _, f := range adv.Findings {
-			finding := types.VulnerabilityFinding{
-				Severity:         normaliseSeverity(adv.Severity),
-				Package:          adv.ModuleName,
-				InstalledVersion: f.Version,
-				ID:               getAdvisoryID(&adv),
-				Title:            adv.Title,
-				PatchedIn:        adv.PatchedVersions,
-			}
-			findings = append(findings, finding)
+	// Build a set of installed versions per package for lookup
+	installedVersions := make(map[string]map[string]bool)
+	for _, d := range deps {
+		if installedVersions[d.Name] == nil {
+			installedVersions[d.Name] = make(map[string]bool)
 		}
+		installedVersions[d.Name][d.Version] = true
+	}
 
-		// If no findings but advisory exists, still report it
-		if len(adv.Findings) == 0 {
-			finding := types.VulnerabilityFinding{
-				Severity:  normaliseSeverity(adv.Severity),
-				Package:   adv.ModuleName,
-				ID:        getAdvisoryID(&adv),
-				Title:     adv.Title,
-				PatchedIn: adv.PatchedVersions,
+	for pkgName, advisories := range resp {
+		versions := installedVersions[pkgName]
+		for i := range advisories {
+			// Report a finding for each installed version of this package
+			for version := range versions {
+				finding := types.VulnerabilityFinding{
+					Severity:         normaliseSeverity(advisories[i].Severity),
+					Package:          pkgName,
+					InstalledVersion: version,
+					ID:               getBulkAdvisoryID(&advisories[i]),
+					Title:            advisories[i].Title,
+					PatchedIn:        advisories[i].PatchedVersions,
+				}
+				findings = append(findings, finding)
 			}
-			findings = append(findings, finding)
 		}
 	}
 
@@ -251,8 +207,8 @@ func normaliseSeverity(s string) string {
 	}
 }
 
-// getAdvisoryID returns the best identifier for an advisory.
-func getAdvisoryID(adv *advisory) string {
+// getBulkAdvisoryID returns the best identifier for a bulk advisory.
+func getBulkAdvisoryID(adv *bulkAdvisory) string {
 	if adv.GHSAID != "" {
 		return adv.GHSAID
 	}

@@ -3,6 +3,7 @@ package supplychain
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/seanhalberthal/supplyscan/internal/supplychain/sources"
@@ -44,12 +45,13 @@ func NewDetector(opts ...DetectorOption) (*Detector, error) {
 		opt(cfg)
 	}
 
-	// Default sources: DataDog + GitHub Advisory
+	// Default sources: DataDog + GitHub Advisory + OSV.dev
 	iocSources := cfg.sources
 	if len(iocSources) == 0 {
 		iocSources = []IOCSource{
 			sources.NewDataDogSource(),
 			sources.NewGitHubAdvisorySource(),
+			sources.NewOSVSource(),
 		}
 	}
 
@@ -101,7 +103,7 @@ func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding 
 
 	// Check if this version is compromised
 	for _, v := range pkg.Versions {
-		if v == version {
+		if versionMatches(v, version) {
 			// Determine finding type based on campaigns
 			findingType := "supply_chain_compromise"
 			if len(pkg.Campaigns) > 0 {
@@ -137,7 +139,7 @@ func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarnin
 	if db != nil {
 		if pkg, exists := db.Packages[name]; exists {
 			for _, v := range pkg.Versions {
-				if v == version {
+				if versionMatches(v, version) {
 					return nil // Already reported as finding
 				}
 			}
@@ -176,4 +178,30 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 // GetStatus returns the current IOC database status.
 func (d *Detector) GetStatus() types.IOCDatabaseStatus {
 	return d.aggregator.getStatus()
+}
+
+// versionMatches checks if a stored version entry matches an installed version.
+// Handles exact matches and common range patterns from IOC sources:
+//   - "1.0.0" matches "1.0.0" (exact)
+//   - ">= 0" matches any version (all versions compromised, common for malware)
+//   - "<= X" or ">= X" with wildcard-like patterns
+func versionMatches(storedVersion, installedVersion string) bool {
+	// Exact match (most common case)
+	if storedVersion == installedVersion {
+		return true
+	}
+
+	trimmed := strings.TrimSpace(storedVersion)
+
+	// ">= 0" means all versions are affected (common for typosquatting malware)
+	if trimmed == ">= 0" || trimmed == ">=0" {
+		return true
+	}
+
+	// "* " or empty range means all versions
+	if trimmed == "*" {
+		return true
+	}
+
+	return false
 }

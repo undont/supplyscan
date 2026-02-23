@@ -24,6 +24,15 @@ const (
 
 	// gitHubPageSize is the number of advisories per page.
 	gitHubPageSize = 100
+
+	// gitHubSourceName is the source identifier.
+	gitHubSourceName = "github"
+
+	// severityCritical is the critical severity level.
+	severityCritical = "critical"
+
+	// ecosystemNPM is the npm ecosystem identifier.
+	ecosystemNPM = "npm"
 )
 
 // GitHubAdvisorySource fetches malware advisories from GitHub's Security Advisory Database.
@@ -62,7 +71,7 @@ func NewGitHubAdvisorySource(opts ...GitHubSourceOption) *GitHubAdvisorySource {
 
 // Name returns the source identifier.
 func (s *GitHubAdvisorySource) Name() string {
-	return "github"
+	return gitHubSourceName
 }
 
 // CacheTTL returns how long this source's data should be cached.
@@ -133,7 +142,7 @@ func (s *GitHubAdvisorySource) fetchPage(ctx context.Context, client *http.Clien
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is the configured GitHub advisory endpoint
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch advisories: %w", err)
 	}
@@ -261,8 +270,8 @@ func mergeVersionRanges(existing []string, newRange string) []string {
 // normaliseSeverity normalises GitHub severity to our format.
 func normaliseSeverity(severity string) string {
 	switch strings.ToLower(severity) {
-	case "critical":
-		return "critical"
+	case severityCritical:
+		return severityCritical
 	case "high":
 		return "high"
 	case "moderate", "medium":
@@ -270,7 +279,7 @@ func normaliseSeverity(severity string) string {
 	case "low":
 		return "low"
 	default:
-		return "critical" // Malware defaults to critical
+		return severityCritical // Malware defaults to critical
 	}
 }
 
@@ -278,7 +287,7 @@ func normaliseSeverity(severity string) string {
 func (s *GitHubAdvisorySource) mergeAdvisoryIntoPackages(packages map[string]types.SourcePackage, adv *gitHubAdvisory) {
 	for j := range adv.Vulnerabilities {
 		vuln := &adv.Vulnerabilities[j]
-		if vuln.Package.Ecosystem != "npm" {
+		if vuln.Package.Ecosystem != ecosystemNPM {
 			continue
 		}
 

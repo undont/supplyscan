@@ -474,15 +474,19 @@ func TestGetStatus(t *testing.T) {
 }
 
 func TestNew_CreatesDetectorAndClient(t *testing.T) {
-	scanner, err := New()
+	s, err := New()
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if scanner.detector == nil {
+	ds, ok := s.(*defaultScanner)
+	if !ok {
+		t.Fatal("New() did not return a *defaultScanner")
+	}
+	if ds.detector == nil {
 		t.Error("detector is nil")
 	}
-	if scanner.auditClient == nil {
+	if ds.auditClient == nil {
 		t.Error("auditClient is nil")
 	}
 }

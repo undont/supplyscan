@@ -2,7 +2,6 @@ package audit
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,6 +20,9 @@ func TestNewClient(t *testing.T) {
 	}
 	if client.httpClient == nil {
 		t.Error("httpClient is nil")
+	}
+	if client.httpClient.Timeout != defaultTimeout {
+		t.Errorf("httpClient.Timeout = %v, want %v", client.httpClient.Timeout, defaultTimeout)
 	}
 	if client.endpoint != defaultEndpoint {
 		t.Errorf("endpoint = %q, want %q", client.endpoint, defaultEndpoint)
@@ -44,43 +46,53 @@ func TestNewClient_WithOptions(t *testing.T) {
 	}
 }
 
-func TestBuildAuditRequest(t *testing.T) {
+func TestBuildBulkRequest(t *testing.T) {
 	deps := []types.Dependency{
 		{Name: "lodash", Version: testLodashVersion},
 		{Name: "@babel/core", Version: "7.23.0"},
 	}
 
-	req := buildAuditRequest(deps)
+	req := buildBulkRequest(deps)
 
-	if req.Name != "audit-check" {
-		t.Errorf("Name = %q, want audit-check", req.Name)
-	}
-	if req.Version != "1.0.0" {
-		t.Errorf("Version = %q, want 1.0.0", req.Version)
+	// Check that both packages are in the request
+	if len(req) != 2 {
+		t.Errorf("Expected 2 packages in request, got %d", len(req))
 	}
 
-	// Check requires
-	if req.Requires["lodash"] != testLodashVersion {
-		t.Errorf("Requires[lodash] = %q, want %s", req.Requires["lodash"], testLodashVersion)
-	}
-	if req.Requires["@babel/core"] != "7.23.0" {
-		t.Errorf("Requires[@babel/core] = %q, want 7.23.0", req.Requires["@babel/core"])
+	lodashVersions := req["lodash"]
+	if len(lodashVersions) != 1 || lodashVersions[0] != testLodashVersion {
+		t.Errorf("lodash versions = %v, want [%s]", lodashVersions, testLodashVersion)
 	}
 
-	// Check dependencies
-	if req.Dependencies["lodash"].Version != testLodashVersion {
-		t.Errorf("Dependencies[lodash].Version = %q, want %s", req.Dependencies["lodash"].Version, testLodashVersion)
+	babelVersions := req["@babel/core"]
+	if len(babelVersions) != 1 || babelVersions[0] != "7.23.0" {
+		t.Errorf("@babel/core versions = %v, want [7.23.0]", babelVersions)
 	}
 }
 
-func TestBuildAuditRequest_Empty(t *testing.T) {
-	req := buildAuditRequest([]types.Dependency{})
-
-	if len(req.Requires) != 0 {
-		t.Errorf("Expected empty requires, got %d", len(req.Requires))
+func TestBuildBulkRequest_MultipleVersions(t *testing.T) {
+	deps := []types.Dependency{
+		{Name: "lodash", Version: "4.17.20"},
+		{Name: "lodash", Version: "4.17.21"},
 	}
-	if len(req.Dependencies) != 0 {
-		t.Errorf("Expected empty dependencies, got %d", len(req.Dependencies))
+
+	req := buildBulkRequest(deps)
+
+	if len(req) != 1 {
+		t.Errorf("Expected 1 package in request, got %d", len(req))
+	}
+
+	versions := req["lodash"]
+	if len(versions) != 2 {
+		t.Errorf("Expected 2 versions, got %d", len(versions))
+	}
+}
+
+func TestBuildBulkRequest_Empty(t *testing.T) {
+	req := buildBulkRequest([]types.Dependency{})
+
+	if len(req) != 0 {
+		t.Errorf("Expected empty request, got %d packages", len(req))
 	}
 }
 
@@ -110,67 +122,68 @@ func TestNormaliseSeverity(t *testing.T) {
 	}
 }
 
-func TestGetAdvisoryID(t *testing.T) {
+func TestGetBulkAdvisoryID(t *testing.T) {
 	tests := []struct {
 		name   string
-		adv    advisory
+		adv    bulkAdvisory
 		wantID string
 	}{
 		{
 			name:   "with GHSA ID",
-			adv:    advisory{ID: 123, GHSAID: "GHSA-abcd-1234-efgh"},
+			adv:    bulkAdvisory{ID: 123, GHSAID: "GHSA-abcd-1234-efgh"},
 			wantID: "GHSA-abcd-1234-efgh",
 		},
 		{
 			name:   "without GHSA ID",
-			adv:    advisory{ID: 456},
+			adv:    bulkAdvisory{ID: 456},
 			wantID: "npm:456",
 		},
 		{
 			name:   "empty GHSA ID",
-			adv:    advisory{ID: 789, GHSAID: ""},
+			adv:    bulkAdvisory{ID: 789, GHSAID: ""},
 			wantID: "npm:789",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getAdvisoryID(&tt.adv); got != tt.wantID {
-				t.Errorf("getAdvisoryID() = %q, want %q", got, tt.wantID)
+			if got := getBulkAdvisoryID(&tt.adv); got != tt.wantID {
+				t.Errorf("getBulkAdvisoryID() = %q, want %q", got, tt.wantID)
 			}
 		})
 	}
 }
 
-func TestConvertAdvisories(t *testing.T) {
-	advisories := map[string]advisory{
-		"1001": {
-			ID:              1001,
-			Title:           "Prototype Pollution",
-			ModuleName:      "lodash",
-			Severity:        "high",
-			PatchedVersions: ">=4.17.21",
-			GHSAID:          "GHSA-xxxx-yyyy-zzzz",
-			Findings: []finding{
-				{Version: "4.17.20", Paths: []string{"lodash"}},
+func TestConvertBulkAdvisories(t *testing.T) {
+	resp := bulkResponse{
+		"lodash": {
+			{
+				ID:              1001,
+				Title:           "Prototype Pollution",
+				Severity:        "high",
+				PatchedVersions: ">=4.17.21",
+				GHSAID:          "GHSA-xxxx-yyyy-zzzz",
 			},
 		},
-		"1002": {
-			ID:              1002,
-			Title:           "ReDoS",
-			ModuleName:      "minimatch",
-			Severity:        "moderate",
-			PatchedVersions: ">=3.0.5",
-			Findings: []finding{
-				{Version: "3.0.4", Paths: []string{"minimatch"}},
-				{Version: "3.0.3", Paths: []string{"glob>minimatch"}},
+		"minimatch": {
+			{
+				ID:              1002,
+				Title:           "ReDoS",
+				Severity:        "moderate",
+				PatchedVersions: ">=3.0.5",
 			},
 		},
 	}
 
-	findings := convertAdvisories(advisories)
+	deps := []types.Dependency{
+		{Name: "lodash", Version: "4.17.20"},
+		{Name: "minimatch", Version: "3.0.4"},
+		{Name: "minimatch", Version: "3.0.3"},
+	}
 
-	// Should have 3 findings (1 for lodash, 2 for minimatch)
+	findings := convertBulkAdvisories(resp, deps)
+
+	// Should have 3 findings (1 for lodash, 2 for minimatch since 2 installed versions)
 	if len(findings) != 3 {
 		t.Errorf("Expected 3 findings, got %d", len(findings))
 	}
@@ -202,35 +215,8 @@ func TestConvertAdvisories(t *testing.T) {
 	}
 }
 
-func TestConvertAdvisories_NoFindings(t *testing.T) {
-	// advisory without specific findings should still be reported
-	advisories := map[string]advisory{
-		"1001": {
-			ID:              1001,
-			Title:           "Security Issue",
-			ModuleName:      "some-pkg",
-			Severity:        "critical",
-			PatchedVersions: ">=2.0.0",
-			Findings:        []finding{}, // Empty findings
-		},
-	}
-
-	findings := convertAdvisories(advisories)
-
-	if len(findings) != 1 {
-		t.Errorf("Expected 1 finding for advisory without findings, got %d", len(findings))
-	}
-
-	if findings[0].Package != "some-pkg" {
-		t.Errorf("Package = %q, want some-pkg", findings[0].Package)
-	}
-	if findings[0].InstalledVersion != "" {
-		t.Errorf("InstalledVersion = %q, want empty", findings[0].InstalledVersion)
-	}
-}
-
-func TestConvertAdvisories_Empty(t *testing.T) {
-	findings := convertAdvisories(map[string]advisory{})
+func TestConvertBulkAdvisories_Empty(t *testing.T) {
+	findings := convertBulkAdvisories(bulkResponse{}, []types.Dependency{})
 
 	if findings == nil {
 		t.Error("Expected empty slice, got nil")
@@ -241,23 +227,15 @@ func TestConvertAdvisories_Empty(t *testing.T) {
 }
 
 func TestAuditDependencies_MockServer(t *testing.T) {
-	// Create mock server
-	mockResponse := response{
-		Advisories: map[string]advisory{
-			"1001": {
+	// Create mock bulk advisory response
+	mockResponse := bulkResponse{
+		"test-pkg": {
+			{
 				ID:              1001,
 				Title:           "Test Vulnerability",
-				ModuleName:      "test-pkg",
 				Severity:        "high",
 				PatchedVersions: ">=2.0.0",
-				Findings: []finding{
-					{Version: "1.0.0", Paths: []string{"test-pkg"}},
-				},
 			},
-		},
-		Metadata: metadata{
-			Vulnerabilities: vulnerabilityCounts{High: 1},
-			Dependencies:    1,
 		},
 	}
 
@@ -270,17 +248,19 @@ func TestAuditDependencies_MockServer(t *testing.T) {
 			t.Errorf("Expected Content-Type: application/json, got %s", r.Header.Get("Content-Type"))
 		}
 
-		// Decode request body to verify format
-		var req request
+		// Decode request body to verify bulk format
+		var req bulkRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("Failed to decode request body: %v", err)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		err := json.NewEncoder(w).Encode(mockResponse)
-		if err != nil {
-			fmt.Printf("Failed to encode mock response: %v\n", err)
+		// Verify bulk format: package name -> versions
+		if versions, ok := req["test-pkg"]; !ok || len(versions) != 1 || versions[0] != "1.0.0" {
+			t.Errorf("Expected bulk request with test-pkg: [1.0.0], got %v", req)
 		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mockResponse)
 	}))
 	defer server.Close()
 
@@ -376,23 +356,15 @@ func TestAuditDependencies_InvalidJSON(t *testing.T) {
 }
 
 func TestAuditSinglePackage_MockServer(t *testing.T) {
-	mockResponse := response{
-		Advisories: map[string]advisory{
-			"1001": {
+	mockResponse := bulkResponse{
+		"lodash": {
+			{
 				ID:              1001,
 				Title:           "Prototype Pollution",
-				ModuleName:      "lodash",
 				Severity:        "high",
 				PatchedVersions: ">=4.17.21",
 				GHSAID:          "GHSA-test-1234",
-				Findings: []finding{
-					{Version: "4.17.20", Paths: []string{"lodash"}},
-				},
 			},
-		},
-		Metadata: metadata{
-			Vulnerabilities: vulnerabilityCounts{High: 1},
-			Dependencies:    1,
 		},
 	}
 
@@ -431,12 +403,7 @@ func TestAuditSinglePackage_MockServer(t *testing.T) {
 }
 
 func TestAuditSinglePackage_NoVulnerabilities(t *testing.T) {
-	mockResponse := response{
-		Advisories: map[string]advisory{},
-		Metadata: metadata{
-			Dependencies: 1,
-		},
-	}
+	mockResponse := bulkResponse{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -462,16 +429,9 @@ func TestAuditSinglePackage_NoVulnerabilities(t *testing.T) {
 	}
 }
 
-func TestRequest_JSONMarshaling(t *testing.T) {
-	req := &request{
-		Name:    "test",
-		Version: "1.0.0",
-		Requires: map[string]string{
-			"lodash": "4.17.21",
-		},
-		Dependencies: map[string]dep{
-			"lodash": {Version: "4.17.21"},
-		},
+func TestBulkRequest_JSONMarshaling(t *testing.T) {
+	req := bulkRequest{
+		"lodash": {"4.17.21"},
 	}
 
 	data, err := json.Marshal(req)
@@ -479,58 +439,44 @@ func TestRequest_JSONMarshaling(t *testing.T) {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 
-	var parsed request
+	var parsed bulkRequest
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	if parsed.Name != "test" {
-		t.Errorf("Name = %q, want test", parsed.Name)
-	}
-	if parsed.Requires["lodash"] != "4.17.21" {
-		t.Errorf("Requires[lodash] = %q, want 4.17.21", parsed.Requires["lodash"])
+	if len(parsed["lodash"]) != 1 || parsed["lodash"][0] != "4.17.21" {
+		t.Errorf("lodash versions = %v, want [4.17.21]", parsed["lodash"])
 	}
 }
 
-func TestResponse_JSONUnmarshaling(t *testing.T) {
+func TestBulkResponse_JSONUnmarshaling(t *testing.T) {
 	jsonData := `{
-		"advisories": {
-			"1001": {
+		"test-pkg": [
+			{
 				"id": 1001,
+				"url": "https://github.com/advisories/GHSA-test-1234",
 				"title": "Test Vuln",
-				"module_name": "test-pkg",
 				"severity": "high",
 				"vulnerable_versions": "<2.0.0",
 				"patched_versions": ">=2.0.0",
+				"range": "<2.0.0",
 				"github_advisory_id": "GHSA-test-1234",
-				"cwe": ["CWE-79"],
-				"findings": [
-					{"version": "1.0.0", "paths": ["test-pkg"]}
-				]
+				"cwe": ["CWE-79"]
 			}
-		},
-		"metadata": {
-			"vulnerabilities": {
-				"info": 0,
-				"low": 0,
-				"moderate": 0,
-				"high": 1,
-				"critical": 0
-			},
-			"dependencies": 10
-		}
+		]
 	}`
 
-	var resp response
+	var resp bulkResponse
 	if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	if len(resp.Advisories) != 1 {
-		t.Errorf("Expected 1 advisory, got %d", len(resp.Advisories))
+	advisories := resp["test-pkg"]
+	if len(advisories) != 1 {
+		t.Errorf("Expected 1 advisory for test-pkg, got %d", len(advisories))
 	}
 
-	adv := resp.Advisories["1001"]
+	adv := advisories[0]
 	if adv.ID != 1001 {
 		t.Errorf("advisory ID = %d, want 1001", adv.ID)
 	}
@@ -540,107 +486,36 @@ func TestResponse_JSONUnmarshaling(t *testing.T) {
 	if len(adv.CWE) != 1 || adv.CWE[0] != "CWE-79" {
 		t.Errorf("CWE = %v, want [CWE-79]", adv.CWE)
 	}
-	if len(adv.Findings) != 1 {
-		t.Errorf("Findings = %d, want 1", len(adv.Findings))
-	}
-	if resp.Metadata.Vulnerabilities.High != 1 {
-		t.Errorf("High vulns = %d, want 1", resp.Metadata.Vulnerabilities.High)
+	if adv.PatchedVersions != ">=2.0.0" {
+		t.Errorf("PatchedVersions = %q, want >=2.0.0", adv.PatchedVersions)
 	}
 }
 
-func TestDoAudit_InvalidEndpoint(t *testing.T) {
-	// Create a client with a short timeout
+func TestDoBulkAudit_InvalidEndpoint(t *testing.T) {
+	// Create a client without a valid endpoint
 	c := &Client{
 		httpClient: &http.Client{},
 	}
 
-	// Build a request
-	req := buildAuditRequest([]types.Dependency{
+	req := buildBulkRequest([]types.Dependency{
 		{Name: "test", Version: "1.0.0"},
 	})
 
-	// This will fail because we can't connect to the real endpoint in tests
-	// The important thing is it handles errors gracefully
-	_, err := c.doAudit(req)
-	// We expect an error since we're not mocking the real endpoint
+	_, err := c.doBulkAudit(req, []types.Dependency{{Name: "test", Version: "1.0.0"}})
 	if err == nil {
-		t.Log("doAudit() succeeded unexpectedly (real npm API available)")
+		t.Log("doBulkAudit() succeeded unexpectedly (real npm API available)")
 	}
 }
 
-func TestVulnerabilityCounts_JSONUnmarshaling(t *testing.T) {
-	jsonData := `{
-		"info": 1,
-		"low": 2,
-		"moderate": 3,
-		"high": 4,
-		"critical": 5
-	}`
-
-	var counts vulnerabilityCounts
-	if err := json.Unmarshal([]byte(jsonData), &counts); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-
-	if counts.Info != 1 {
-		t.Errorf("Info = %d, want 1", counts.Info)
-	}
-	if counts.Low != 2 {
-		t.Errorf("Low = %d, want 2", counts.Low)
-	}
-	if counts.Moderate != 3 {
-		t.Errorf("Moderate = %d, want 3", counts.Moderate)
-	}
-	if counts.High != 4 {
-		t.Errorf("High = %d, want 4", counts.High)
-	}
-	if counts.Critical != 5 {
-		t.Errorf("Critical = %d, want 5", counts.Critical)
+func TestDefaultEndpoint_IsBulkAPI(t *testing.T) {
+	// Ensure we're using the bulk advisory endpoint, not the legacy audit endpoint
+	expected := "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk"
+	if defaultEndpoint != expected {
+		t.Errorf("defaultEndpoint = %q, want %q (bulk advisory API)", defaultEndpoint, expected)
 	}
 }
 
-func TestDep_JSONMarshaling(t *testing.T) {
-	d := dep{
-		Version:  "1.0.0",
-		Requires: map[string]string{"other": "2.0.0"},
-	}
-
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
-	}
-
-	var parsed dep
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-
-	if parsed.Version != "1.0.0" {
-		t.Errorf("Version = %q, want 1.0.0", parsed.Version)
-	}
-	if parsed.Requires["other"] != "2.0.0" {
-		t.Errorf("Requires[other] = %q, want 2.0.0", parsed.Requires["other"])
-	}
-}
-
-func TestDep_OmitsEmptyRequires(t *testing.T) {
-	d := dep{
-		Version:  "1.0.0",
-		Requires: nil,
-	}
-
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
-	}
-
-	// Should not contain "requires" key when nil
-	if string(data) != `{"version":"1.0.0"}` {
-		t.Errorf("JSON = %s, want without requires", string(data))
-	}
-}
-
-func BenchmarkBuildAuditRequest(b *testing.B) {
+func BenchmarkBuildBulkRequest(b *testing.B) {
 	deps := make([]types.Dependency, 100)
 	for i := 0; i < 100; i++ {
 		deps[i] = types.Dependency{
@@ -651,27 +526,27 @@ func BenchmarkBuildAuditRequest(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buildAuditRequest(deps)
+		buildBulkRequest(deps)
 	}
 }
 
-func BenchmarkConvertAdvisories(b *testing.B) {
-	advisories := make(map[string]advisory)
+func BenchmarkConvertBulkAdvisories(b *testing.B) {
+	resp := make(bulkResponse)
+	deps := make([]types.Dependency, 0, 50)
 	for i := 0; i < 50; i++ {
-		advisories[string(rune('0'+i))] = advisory{
-			ID:         i,
-			Title:      "Test Vulnerability",
-			ModuleName: "test-pkg",
-			Severity:   "high",
-			Findings: []finding{
-				{Version: "1.0.0"},
-				{Version: "1.0.1"},
+		name := "test-pkg-" + string(rune('a'+i%26))
+		resp[name] = []bulkAdvisory{
+			{
+				ID:       i,
+				Title:    "Test Vulnerability",
+				Severity: "high",
 			},
 		}
+		deps = append(deps, types.Dependency{Name: name, Version: "1.0.0"})
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		convertAdvisories(advisories)
+		convertBulkAdvisories(resp, deps)
 	}
 }

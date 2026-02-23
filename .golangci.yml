@@ -166,6 +166,11 @@ linters:
       - path: 'internal/types/types\.go$'
         linters:
           - revive
+      # revive: Scanner package name is intentional despite stdlib conflict
+      - path: 'internal/scanner/.*\.go$'
+        linters:
+          - revive
+        text: 'var-naming'
 
 formatters:
   enable:

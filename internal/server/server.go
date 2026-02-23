@@ -13,10 +13,10 @@ import (
 )
 
 // scan holds the scanner instance for tool handlers.
-var scan *scanner.Scanner
+var scan scanner.Scanner
 
 // Run starts the MCP server with the given scanner.
-func Run(s *scanner.Scanner) {
+func Run(s scanner.Scanner) {
 	scan = s
 
 	server := mcp.NewServer(

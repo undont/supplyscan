@@ -6,13 +6,83 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
+
+// mockScanner implements scanner.Scanner for testing without network calls.
+type mockScanner struct {
+	scanResult    *types.ScanResult
+	scanErr       error
+	checkResult   *types.CheckResult
+	checkErr      error
+	refreshResult *types.RefreshResult
+	refreshErr    error
+	status        types.IOCDatabaseStatus
+}
+
+func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
+	return m.scanResult, m.scanErr
+}
+
+func (m *mockScanner) CheckPackage(_, _ string) (*types.CheckResult, error) {
+	return m.checkResult, m.checkErr
+}
+
+func (m *mockScanner) Refresh(_ bool) (*types.RefreshResult, error) {
+	return m.refreshResult, m.refreshErr
+}
+
+func (m *mockScanner) GetStatus() types.IOCDatabaseStatus {
+	return m.status
+}
+
+// newDefaultMock returns a mockScanner with sensible defaults for most tests.
+func newDefaultMock() *mockScanner {
+	return &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+		refreshResult: &types.RefreshResult{
+			Updated:       false,
+			PackagesCount: 100,
+			VersionsCount: 200,
+			CacheAgeHours: 1,
+			SourceResults: map[string]types.SourceRefreshInfo{
+				"datadog": {PackageCount: 100},
+			},
+		},
+		status: types.IOCDatabaseStatus{
+			Packages:    100,
+			Versions:    200,
+			LastUpdated: "2024-01-01T00:00:00Z",
+			Sources:     []string{"datadog"},
+		},
+	}
+}
 
 // resetOutputJSON resets the global outputJSON flag between tests.
 func resetOutputJSON() {
@@ -213,13 +283,10 @@ func TestRunStatus_JSON(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		runStatus(scan)
+		runStatus(mock)
 	})
 
 	// Should be valid JSON
@@ -257,13 +324,10 @@ func TestRunStatus_JSON(t *testing.T) {
 func TestRunStatus_Styled(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		runStatus(scan)
+		runStatus(mock)
 	})
 
 	// Should contain styled elements
@@ -285,26 +349,28 @@ func TestRunScan_Success_JSON(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	// Create test project
-	tmpDir := t.TempDir()
-	lockfileContent := `{
-		"name": "test",
-		"lockfileVersion": 3,
-		"packages": {
-			"node_modules/lodash": {"version": "4.17.21"}
-		}
-	}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfileContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 1,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 1},
+			},
+		},
 	}
 
 	output := captureOutput(func() {
-		runScan(scan, tmpDir, scanOptions{Recursive: false, IncludeDev: true})
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
 	})
 
 	// Should be valid JSON
@@ -369,45 +435,30 @@ func TestRunScan_WithFlags(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	// Create test project with nested structure
-	tmpDir := t.TempDir()
-
-	// Root lockfile
-	rootLock := `{
-		"name": "root",
-		"lockfileVersion": 3,
-		"packages": {
-			"node_modules/a": {"version": "1.0.0"}
-		}
-	}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(rootLock), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Nested lockfile
-	nestedDir := filepath.Join(tmpDir, "packages", "sub")
-	if err := os.MkdirAll(nestedDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	nestedLock := `{
-		"name": "sub",
-		"lockfileVersion": 3,
-		"packages": {
-			"node_modules/b": {"version": "1.0.0"}
-		}
-	}`
-	if err := os.WriteFile(filepath.Join(nestedDir, "package-lock.json"), []byte(nestedLock), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  2,
+				TotalDependencies: 2,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 1},
+				{Path: "packages/sub/package-lock.json", Type: "npm", Dependencies: 1},
+			},
+		},
 	}
 
 	// Test with recursive flag
 	output := captureOutput(func() {
-		runScan(scan, tmpDir, scanOptions{Recursive: true, IncludeDev: true})
+		runScan(mock, "/tmp/test", scanOptions{Recursive: true, IncludeDev: true})
 	})
 
 	var result types.ScanResult
@@ -424,13 +475,17 @@ func TestRunCheck_JSON(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
 	output := captureOutput(func() {
-		runCheck(scan, "lodash", "4.17.21")
+		runCheck(mock, "lodash", "4.17.21")
 	})
 
 	// Should be valid JSON
@@ -448,13 +503,17 @@ func TestRunCheck_JSON(t *testing.T) {
 func TestRunCheck_Styled(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
 	output := captureOutput(func() {
-		runCheck(scan, "lodash", "4.17.21")
+		runCheck(mock, "lodash", "4.17.21")
 	})
 
 	// Should contain styled elements
@@ -475,24 +534,16 @@ func TestRunRefresh_JSON(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
-	// This might actually hit the network in a real test
-	// In production tests, you'd mock the HTTP client
 	output := captureOutput(func() {
-		runRefresh(scan, false) // Don't force to use cached
+		runRefresh(mock, false)
 	})
 
 	// Should be valid JSON
 	var result types.RefreshResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		// If network fails, the output might be an error
-		if !strings.Contains(output, "Error") {
-			t.Errorf("Output is not valid JSON: %v\nOutput: %s", err, output)
-		}
+		t.Errorf("Output is not valid JSON: %v\nOutput: %s", err, output)
 	}
 }
 
@@ -595,13 +646,10 @@ func TestRun_NoArgs(t *testing.T) {
 	restore, _ := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		Run(scan, []string{})
+		Run(mock, []string{})
 	})
 
 	// Now prints usage without error exit
@@ -615,13 +663,10 @@ func TestRun_UnknownCommand(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	stderr := captureStderr(func() {
-		Run(scan, []string{"unknown-command"})
+		Run(mock, []string{"unknown-command"})
 	})
 
 	if *exitCode != 1 {
@@ -638,13 +683,10 @@ func TestRun_StatusCommand(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		Run(scan, []string{"status", "--json"})
+		Run(mock, []string{"status", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -662,13 +704,12 @@ func TestRun_ScanCommand_InvalidPath(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		scanErr: fmt.Errorf("stat /nonexistent/path: no such file or directory"),
 	}
 
 	stderr := captureStderr(func() {
-		Run(scan, []string{"scan", "/nonexistent/path"})
+		Run(mock, []string{"scan", "/nonexistent/path"})
 	})
 
 	if *exitCode != 1 {
@@ -685,19 +726,26 @@ func TestRun_ScanCommand_WithFlags(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	tmpDir := t.TempDir()
-	lockfile := `{"name": "test", "lockfileVersion": 3, "packages": {"node_modules/a": {"version": "1.0.0"}}}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfile), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 1,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{},
+		},
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"scan", tmpDir, "--recursive", "--no-dev", "--json"})
+		Run(mock, []string{"scan", "/tmp/test", "--recursive", "--no-dev", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -715,14 +763,11 @@ func TestRun_CheckCommand_MissingArgs(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	// Missing both package and version
 	stderr := captureStderr(func() {
-		Run(scan, []string{"check"})
+		Run(mock, []string{"check"})
 	})
 	if *exitCode != 1 {
 		t.Errorf("Exit code = %d, want 1", *exitCode)
@@ -736,7 +781,7 @@ func TestRun_CheckCommand_MissingArgs(t *testing.T) {
 
 	// Missing version
 	_ = captureStderr(func() {
-		Run(scan, []string{"check", "lodash"})
+		Run(mock, []string{"check", "lodash"})
 	})
 	if *exitCode != 1 {
 		t.Errorf("Exit code = %d, want 1 (missing version)", *exitCode)
@@ -749,13 +794,17 @@ func TestRun_CheckCommand_Valid(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"check", "lodash", "4.17.21", "--json"})
+		Run(mock, []string{"check", "lodash", "4.17.21", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -774,13 +823,10 @@ func TestRun_RefreshCommand(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		Run(scan, []string{"refresh", "--json"})
+		Run(mock, []string{"refresh", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -799,13 +845,19 @@ func TestRun_RefreshCommand_Force(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := newDefaultMock()
+	mock.refreshResult = &types.RefreshResult{
+		Updated:       true,
+		PackagesCount: 150,
+		VersionsCount: 300,
+		CacheAgeHours: 0,
+		SourceResults: map[string]types.SourceRefreshInfo{
+			"datadog": {PackageCount: 150},
+		},
 	}
 
 	output := captureOutput(func() {
-		Run(scan, []string{"refresh", "--force", "--json"})
+		Run(mock, []string{"refresh", "--force", "--json"})
 	})
 
 	if *exitCode != 0 {
@@ -823,14 +875,11 @@ func TestRun_HelpCommand(t *testing.T) {
 	restore, exitCode := mockExit(t)
 	defer restore()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	// Test "help" command
 	output := captureOutput(func() {
-		Run(scan, []string{"help"})
+		Run(mock, []string{"help"})
 	})
 
 	if *exitCode != 0 {
@@ -843,7 +892,7 @@ func TestRun_HelpCommand(t *testing.T) {
 	// Test "--help" flag
 	*exitCode = 0
 	output = captureOutput(func() {
-		Run(scan, []string{"--help"})
+		Run(mock, []string{"--help"})
 	})
 
 	if *exitCode != 0 {
@@ -854,19 +903,18 @@ func TestRun_HelpCommand(t *testing.T) {
 	}
 }
 
-// Integration tests
+// =============================================================================
+// Status/Scan/Check/Refresh Integration Tests (using mock)
+// =============================================================================
 
 func TestCLI_StatusIntegration(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		runStatus(scan)
+		runStatus(mock)
 	})
 
 	// Verify JSON output contains expected fields
@@ -885,41 +933,39 @@ func TestCLI_ScanIntegration(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	// Create a realistic project structure
-	tmpDir := t.TempDir()
-
-	// Create package-lock.json
-	lockfile := `{
-		"name": "integration-test",
-		"version": "1.0.0",
-		"lockfileVersion": 3,
-		"packages": {
-			"node_modules/express": {
-				"version": "4.18.2"
-			},
-			"node_modules/lodash": {
-				"version": "4.17.21"
-			},
-			"node_modules/@types/node": {
-				"version": "20.8.0",
-				"dev": true
-			}
-		}
-	}`
-
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfile), 0644); err != nil {
-		t.Fatal(err)
+	// Mock scanner that returns different results based on IncludeDev
+	scanCallCount := 0
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain:     types.CheckSupplyChainResult{Compromised: false},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	// First call: IncludeDev=false (2 deps)
+	mock.scanResult = &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 2,
+			Issues:            types.IssueCounts{},
+		},
+		SupplyChain: types.SupplyChainResult{
+			Findings: []types.SupplyChainFinding{},
+			Warnings: []types.SupplyChainWarning{},
+		},
+		Vulnerabilities: types.VulnerabilityResult{
+			Findings: []types.VulnerabilityFinding{},
+		},
+		Lockfiles: []types.LockfileInfo{
+			{Path: "package-lock.json", Type: "npm", Dependencies: 2},
+		},
 	}
 
-	// Test scan
+	// Test scan with IncludeDev=false
 	output := captureOutput(func() {
-		runScan(scan, tmpDir, scanOptions{Recursive: false, IncludeDev: false})
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: false})
 	})
+	scanCallCount++
 
 	var result types.ScanResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
@@ -931,9 +977,28 @@ func TestCLI_ScanIntegration(t *testing.T) {
 		t.Errorf("TotalDependencies = %d, want 2 (dev excluded)", result.Summary.TotalDependencies)
 	}
 
+	// Second call: IncludeDev=true (3 deps)
+	mock.scanResult = &types.ScanResult{
+		Summary: types.ScanSummary{
+			LockfilesScanned:  1,
+			TotalDependencies: 3,
+			Issues:            types.IssueCounts{},
+		},
+		SupplyChain: types.SupplyChainResult{
+			Findings: []types.SupplyChainFinding{},
+			Warnings: []types.SupplyChainWarning{},
+		},
+		Vulnerabilities: types.VulnerabilityResult{
+			Findings: []types.VulnerabilityFinding{},
+		},
+		Lockfiles: []types.LockfileInfo{
+			{Path: "package-lock.json", Type: "npm", Dependencies: 3},
+		},
+	}
+
 	// Test with dev included
 	output2 := captureOutput(func() {
-		runScan(scan, tmpDir, scanOptions{Recursive: false, IncludeDev: true})
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
 	})
 
 	var result2 types.ScanResult
@@ -944,20 +1009,26 @@ func TestCLI_ScanIntegration(t *testing.T) {
 	if result2.Summary.TotalDependencies != 3 {
 		t.Errorf("TotalDependencies = %d, want 3 (dev included)", result2.Summary.TotalDependencies)
 	}
+
+	_ = scanCallCount // used to track calls
 }
 
 func TestCLI_CheckIntegration(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
 	// Check a scoped package
 	output := captureOutput(func() {
-		runCheck(scan, "@babel/core", "7.23.0")
+		runCheck(mock, "@babel/core", "7.23.0")
 	})
 
 	var result types.CheckResult
@@ -966,22 +1037,16 @@ func TestCLI_CheckIntegration(t *testing.T) {
 	}
 
 	// Should have supply_chain and vulnerabilities fields
-	// The actual values depend on IOC database and npm audit
 }
 
 func TestCLI_JSONOutputFormat(t *testing.T) {
 	resetOutputJSON()
 	outputJSON = true
 
-	// Test that all CLI commands produce properly indented JSON
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		runStatus(scan)
+		runStatus(mock)
 	})
 
 	// Check indentation (2 spaces)
@@ -1401,15 +1466,23 @@ func TestPrintScanResult_Lockfiles(t *testing.T) {
 func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{
+				{
+					ID:       "GHSA-xxxx-xxxx-xxxx",
+					Title:    "Prototype Pollution",
+					Severity: "high",
+				},
+			},
+		},
 	}
 
-	// Test with a package that may have vulnerabilities
-	// Using an older lodash version known to have issues
 	output := captureOutput(func() {
-		runCheck(scan, "lodash", "4.17.15")
+		runCheck(mock, "lodash", "4.17.15")
 	})
 
 	// Should show header
@@ -1436,14 +1509,17 @@ func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
 	}
 
-	// Test with a well-known safe package version
 	output := captureOutput(func() {
-		runCheck(scan, "lodash", "4.17.21")
+		runCheck(mock, "lodash", "4.17.21")
 	})
 
 	// Should show success for supply chain
@@ -1464,13 +1540,10 @@ func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 func TestRunRefresh_Styled(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
-	}
+	mock := newDefaultMock()
 
 	output := captureOutput(func() {
-		runRefresh(scan, false)
+		runRefresh(mock, false)
 	})
 
 	// Should show header
@@ -1500,13 +1573,19 @@ func TestRunRefresh_Styled(t *testing.T) {
 func TestRunRefresh_Styled_Force(t *testing.T) {
 	resetOutputJSON()
 
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := newDefaultMock()
+	mock.refreshResult = &types.RefreshResult{
+		Updated:       true,
+		PackagesCount: 150,
+		VersionsCount: 300,
+		CacheAgeHours: 0,
+		SourceResults: map[string]types.SourceRefreshInfo{
+			"datadog": {PackageCount: 150},
+		},
 	}
 
 	output := captureOutput(func() {
-		runRefresh(scan, true) // Force refresh
+		runRefresh(mock, true)
 	})
 
 	// Should show header
@@ -1514,12 +1593,9 @@ func TestRunRefresh_Styled_Force(t *testing.T) {
 		t.Error("Expected 'Database Refresh' header")
 	}
 
-	// Force refresh should typically show "Database updated"
-	// (though depends on network, so we just check for any status)
-	hasStatusMsg := strings.Contains(output, "Database updated") ||
-		strings.Contains(output, "up to date")
-	if !hasStatusMsg {
-		t.Error("Expected database status message")
+	// Force refresh should show "Database updated"
+	if !strings.Contains(output, "Database updated") {
+		t.Error("Expected 'Database updated' message for forced refresh")
 	}
 }
 
@@ -1530,27 +1606,28 @@ func TestRunRefresh_Styled_Force(t *testing.T) {
 func TestRunScan_Styled(t *testing.T) {
 	resetOutputJSON()
 
-	// Create test project
-	tmpDir := t.TempDir()
-	lockfileContent := `{
-		"name": "test",
-		"lockfileVersion": 3,
-		"packages": {
-			"node_modules/lodash": {"version": "4.17.21"},
-			"node_modules/express": {"version": "4.18.2"}
-		}
-	}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockfileContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	scan, err := scanner.New()
-	if err != nil {
-		t.Fatalf("scanner.New() error = %v", err)
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 2,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 2},
+			},
+		},
 	}
 
 	output := captureOutput(func() {
-		runScan(scan, tmpDir, scanOptions{Recursive: false, IncludeDev: true})
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
 	})
 
 	// Should show header
