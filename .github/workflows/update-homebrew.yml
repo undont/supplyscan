@@ -1,0 +1,150 @@
+name: Update Homebrew Tap
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.8.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Tag must match vX.Y.Z format (got: $TAG)" >&2
+            exit 1
+          fi
+
+          # Verify the release exists
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found" >&2
+            exit 1
+          fi
+
+      - name: Download release binaries and compute checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG="${{ inputs.tag }}"
+          VERSION="${TAG#v}"
+          mkdir -p /tmp/bins
+
+          for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
+            if ! gh release download "$TAG" --pattern "supplyscan-${platform}" --dir /tmp/bins; then
+              echo "ERROR: Failed to download supplyscan-${platform}" >&2
+              exit 1
+            fi
+          done
+
+          # Verify all binaries exist before computing checksums
+          for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
+            if [ ! -f "/tmp/bins/supplyscan-${platform}" ]; then
+              echo "ERROR: Binary supplyscan-${platform} not found" >&2
+              exit 1
+            fi
+          done
+
+          # Compute SHA256 checksums
+          DARWIN_AMD64=$(sha256sum /tmp/bins/supplyscan-darwin-amd64 | awk '{print $1}')
+          DARWIN_ARM64=$(sha256sum /tmp/bins/supplyscan-darwin-arm64 | awk '{print $1}')
+          LINUX_AMD64=$(sha256sum /tmp/bins/supplyscan-linux-amd64 | awk '{print $1}')
+          LINUX_ARM64=$(sha256sum /tmp/bins/supplyscan-linux-arm64 | awk '{print $1}')
+
+          echo "version=$VERSION" >> $GITHUB_ENV
+          echo "darwin_amd64_sha=$DARWIN_AMD64" >> $GITHUB_ENV
+          echo "darwin_arm64_sha=$DARWIN_ARM64" >> $GITHUB_ENV
+          echo "linux_amd64_sha=$LINUX_AMD64" >> $GITHUB_ENV
+          echo "linux_arm64_sha=$LINUX_ARM64" >> $GITHUB_ENV
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # Use credential helper to avoid token in clone URL or process list
+          git config --global credential.helper store
+          echo "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com" > ~/.git-credentials
+          trap 'rm -f ~/.git-credentials' EXIT
+
+          git clone https://github.com/seanhalberthal/homebrew-tap.git /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+          mkdir -p Formula
+
+          # Write formula directly with variable substitution (no sed placeholders)
+          cat > Formula/supplyscan.rb << FORMULA
+          class Supplyscan < Formula
+            desc "Security scanner for JavaScript lockfiles — detects supply chain compromises and vulnerabilities"
+            homepage "https://github.com/seanhalberthal/supplyscan"
+            version "${version}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/seanhalberthal/supplyscan/releases/download/v${version}/supplyscan-darwin-arm64"
+                sha256 "${darwin_arm64_sha}"
+
+                def install
+                  bin.install "supplyscan-darwin-arm64" => "supplyscan"
+                end
+              end
+
+              on_intel do
+                url "https://github.com/seanhalberthal/supplyscan/releases/download/v${version}/supplyscan-darwin-amd64"
+                sha256 "${darwin_amd64_sha}"
+
+                def install
+                  bin.install "supplyscan-darwin-amd64" => "supplyscan"
+                end
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/seanhalberthal/supplyscan/releases/download/v${version}/supplyscan-linux-arm64"
+                sha256 "${linux_arm64_sha}"
+
+                def install
+                  bin.install "supplyscan-linux-arm64" => "supplyscan"
+                end
+              end
+
+              on_intel do
+                url "https://github.com/seanhalberthal/supplyscan/releases/download/v${version}/supplyscan-linux-amd64"
+                sha256 "${linux_amd64_sha}"
+
+                def install
+                  bin.install "supplyscan-linux-amd64" => "supplyscan"
+                end
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/supplyscan status 2>&1", 0)
+            end
+          end
+          FORMULA
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/supplyscan.rb
+
+          # Handle no-op case (formula already up to date)
+          if git diff --cached --quiet; then
+            echo "No changes to formula, skipping commit"
+            exit 0
+          fi
+
+          git commit -m "update: supplyscan ${version}"
+          git push

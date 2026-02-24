@@ -371,7 +371,9 @@ jobs:
     permissions:
       contents: read
     needs: [release, version]
-    if: needs.release.result == 'success'
+    if: |
+      !cancelled() &&
+      needs.release.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

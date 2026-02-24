@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fix Homebrew tap update being skipped due to GitHub Actions skip-propagation
+- Add standalone workflow_dispatch for manually updating Homebrew tap
+
+## [1.8.0](https://github.com/seanhalberthal/supplyscan/compare/v1.7.1...v1.8.0)
+
 - Add Homebrew tap auto-update to release workflow
 - Add semver version range filtering to npm audit (skip patched versions)
 - Fix script injection vulnerability in CI workflow (use env vars instead of direct interpolation)
