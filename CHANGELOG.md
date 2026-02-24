@@ -2,8 +2,22 @@
 
 ## [Unreleased]
 
+- Add Homebrew tap auto-update to release workflow
+- Add semver version range filtering to npm audit (skip patched versions)
+- Fix script injection vulnerability in CI workflow (use env vars instead of direct interpolation)
+- Fix token exposure in Homebrew tap clone URL (use credential helper)
+- Scope CI workflow permissions to per-job level (least privilege)
+- Restructure README with Homebrew as primary install method
+
+## [1.7.1](https://github.com/seanhalberthal/supplyscan/compare/v1.7.0...v1.7.1)
+
+### Bug Fixes
+
 - Upgrade MCP Go SDK from v0.2.0 to v1.3.1
 - Migrate server handlers to v1 API signatures
+
+### Docs
+
 - Update README for Go 1.26+ requirement and OSV.dev source
 
 ## [1.7.0](https://github.com/seanhalberthal/supplyscan/compare/v1.6.0...v1.7.0)

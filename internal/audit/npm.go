@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	semver "github.com/Masterminds/semver/v3"
+
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
@@ -178,8 +180,14 @@ func convertBulkAdvisories(resp bulkResponse, deps []types.Dependency) []types.V
 	for pkgName, advisories := range resp {
 		versions := installedVersions[pkgName]
 		for i := range advisories {
-			// Report a finding for each installed version of this package
+			// Parse the vulnerable_versions constraint to filter out patched versions
+			constraint := parseVulnerableRange(advisories[i].VulnerableVersions)
+
+			// Report a finding only for installed versions that are actually vulnerable
 			for version := range versions {
+				if !isVersionVulnerable(version, constraint) {
+					continue
+				}
 				finding := types.VulnerabilityFinding{
 					Severity:         normaliseSeverity(advisories[i].Severity),
 					Package:          pkgName,
@@ -194,6 +202,41 @@ func convertBulkAdvisories(resp bulkResponse, deps []types.Dependency) []types.V
 	}
 
 	return findings
+}
+
+// parseVulnerableRange parses an npm vulnerable_versions range into a semver constraint.
+// Returns nil if the range cannot be parsed.
+func parseVulnerableRange(vulnRange string) *semver.Constraints {
+	if vulnRange == "" {
+		return nil
+	}
+	// npm uses "||" for OR in ranges, which Masterminds/semver also supports
+	c, err := semver.NewConstraint(vulnRange)
+	if err != nil {
+		return nil
+	}
+	return c
+}
+
+// isVersionVulnerable checks whether a version falls within a vulnerable range.
+// If the constraint is nil (unparseable or missing), the version is assumed vulnerable
+// as a safe fallback — the npm API already filtered for this package.
+//
+// Pre-release versions (e.g. "3.0.5-alpha.1") are not matched by constraints like
+// "<3.0.5" due to Masterminds/semver pre-release precedence rules. Such versions will
+// parse successfully but may not match the constraint, potentially producing false
+// negatives. This matches standard SemVer behaviour.
+func isVersionVulnerable(version string, constraint *semver.Constraints) bool {
+	if constraint == nil {
+		// Cannot parse range; fall back to reporting (safe default)
+		return true
+	}
+	v, err := semver.NewVersion(version)
+	if err != nil {
+		// Cannot parse version; fall back to reporting (safe default)
+		return true
+	}
+	return constraint.Check(v)
 }
 
 // normaliseSeverity normalises severity strings.

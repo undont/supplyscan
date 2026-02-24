@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	semver "github.com/Masterminds/semver/v3"
+
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
@@ -158,19 +160,21 @@ func TestConvertBulkAdvisories(t *testing.T) {
 	resp := bulkResponse{
 		"lodash": {
 			{
-				ID:              1001,
-				Title:           "Prototype Pollution",
-				Severity:        "high",
-				PatchedVersions: ">=4.17.21",
-				GHSAID:          "GHSA-xxxx-yyyy-zzzz",
+				ID:                 1001,
+				Title:              "Prototype Pollution",
+				Severity:           "high",
+				VulnerableVersions: "<4.17.21",
+				PatchedVersions:    ">=4.17.21",
+				GHSAID:             "GHSA-xxxx-yyyy-zzzz",
 			},
 		},
 		"minimatch": {
 			{
-				ID:              1002,
-				Title:           "ReDoS",
-				Severity:        "moderate",
-				PatchedVersions: ">=3.0.5",
+				ID:                 1002,
+				Title:              "ReDoS",
+				Severity:           "moderate",
+				VulnerableVersions: "<3.0.5",
+				PatchedVersions:    ">=3.0.5",
 			},
 		},
 	}
@@ -212,6 +216,169 @@ func TestConvertBulkAdvisories(t *testing.T) {
 	}
 	if lodashFinding.PatchedIn != ">=4.17.21" {
 		t.Errorf("lodash PatchedIn = %q, want >=4.17.21", lodashFinding.PatchedIn)
+	}
+}
+
+func TestConvertBulkAdvisories_ExcludesPatchedVersions(t *testing.T) {
+	resp := bulkResponse{
+		"minimatch": {
+			{
+				ID:                 1084,
+				Title:              "ReDoS vulnerability",
+				Severity:           "high",
+				VulnerableVersions: "<3.1.3 || >=4.0.0 <5.1.7",
+				PatchedVersions:    ">=3.1.3 <4.0.0 || >=5.1.7",
+				GHSAID:             "GHSA-3ppc-4f35-3m26",
+			},
+		},
+	}
+
+	deps := []types.Dependency{
+		{Name: "minimatch", Version: "3.0.4"}, // vulnerable
+		{Name: "minimatch", Version: "3.1.3"}, // patched
+		{Name: "minimatch", Version: "5.1.6"}, // vulnerable
+		{Name: "minimatch", Version: "5.1.7"}, // patched
+		{Name: "minimatch", Version: "9.0.6"}, // not in vulnerable range
+	}
+
+	findings := convertBulkAdvisories(resp, deps)
+
+	// Only 3.0.4 and 5.1.6 should be flagged; 3.1.3, 5.1.7, and 9.0.6 are not vulnerable
+	vulnerableVersions := make(map[string]bool)
+	for _, f := range findings {
+		vulnerableVersions[f.InstalledVersion] = true
+	}
+
+	if !vulnerableVersions["3.0.4"] {
+		t.Error("Expected 3.0.4 to be flagged as vulnerable")
+	}
+	if !vulnerableVersions["5.1.6"] {
+		t.Error("Expected 5.1.6 to be flagged as vulnerable")
+	}
+	if vulnerableVersions["3.1.3"] {
+		t.Error("3.1.3 should NOT be flagged (it is the patched version)")
+	}
+	if vulnerableVersions["5.1.7"] {
+		t.Error("5.1.7 should NOT be flagged (it is the patched version)")
+	}
+	if vulnerableVersions["9.0.6"] {
+		t.Error("9.0.6 should NOT be flagged (not in vulnerable range)")
+	}
+	if len(findings) != 2 {
+		t.Errorf("Expected 2 findings, got %d", len(findings))
+	}
+}
+
+func TestParseVulnerableRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantNil bool
+	}{
+		{"empty string returns nil", "", true},
+		{"simple less-than", "<3.1.3", false},
+		{"simple greater-or-equal", ">=2.0.0", false},
+		{"compound OR range", "<3.1.3 || >=4.0.0 <5.1.7", false},
+		{"single version constraint", "1.0.0", false},
+		{"malformed range returns nil", ">=abc", true},
+		{"incomplete operator returns nil", "<", true},
+		{"nonsense string returns nil", "not-a-range", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := parseVulnerableRange(tt.input)
+			if tt.wantNil && c != nil {
+				t.Errorf("parseVulnerableRange(%q) = non-nil, want nil", tt.input)
+			}
+			if !tt.wantNil && c == nil {
+				t.Errorf("parseVulnerableRange(%q) = nil, want constraint", tt.input)
+			}
+		})
+	}
+}
+
+func TestIsVersionVulnerable(t *testing.T) {
+	lessThan3 := mustConstraint(t, "<3.0.5")
+	compoundOR := mustConstraint(t, "<3.1.3 || >=4.0.0 <5.1.7")
+
+	tests := []struct {
+		name       string
+		version    string
+		constraint *semver.Constraints
+		want       bool
+	}{
+		// nil constraint fallback (safe default)
+		{"nil constraint returns true", "1.0.0", nil, true},
+		{"nil constraint with any version", "99.99.99", nil, true},
+
+		// unparseable version fallback (safe default)
+		{"unparseable version returns true", "latest", lessThan3, true},
+		{"non-semver version returns true", "linked", lessThan3, true},
+		{"empty version returns true", "", lessThan3, true},
+
+		// simple range matching
+		{"vulnerable version matches", "3.0.4", lessThan3, true},
+		{"patched version does not match", "3.0.5", lessThan3, false},
+		{"version above range does not match", "4.0.0", lessThan3, false},
+
+		// compound OR range
+		{"first OR branch vulnerable", "3.0.4", compoundOR, true},
+		{"first OR branch patched", "3.1.3", compoundOR, false},
+		{"second OR branch vulnerable", "5.1.6", compoundOR, true},
+		{"second OR branch patched", "5.1.7", compoundOR, false},
+		{"above all ranges", "9.0.6", compoundOR, false},
+
+		// pre-release versions — Masterminds/semver does not match pre-release
+		// against constraints without pre-release tags (standard SemVer behaviour)
+		{"pre-release not matched by simple range", "3.0.5-alpha.1", lessThan3, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isVersionVulnerable(tt.version, tt.constraint)
+			if got != tt.want {
+				t.Errorf("isVersionVulnerable(%q, constraint) = %v, want %v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+// mustConstraint is a test helper that parses a semver constraint or fails the test.
+func mustConstraint(t *testing.T, s string) *semver.Constraints {
+	t.Helper()
+	c, err := semver.NewConstraint(s)
+	if err != nil {
+		t.Fatalf("failed to parse constraint %q: %v", s, err)
+	}
+	return c
+}
+
+func TestConvertBulkAdvisories_NilVulnerableVersionsFallback(t *testing.T) {
+	// When VulnerableVersions is empty, the nil-constraint fallback should report
+	// all installed versions as vulnerable (safe default)
+	resp := bulkResponse{
+		"test-pkg": {
+			{
+				ID:              1001,
+				Title:           "Test Vulnerability",
+				Severity:        "high",
+				PatchedVersions: ">=2.0.0",
+				// VulnerableVersions intentionally empty
+			},
+		},
+	}
+
+	deps := []types.Dependency{
+		{Name: "test-pkg", Version: "1.0.0"},
+		{Name: "test-pkg", Version: "2.0.0"},
+	}
+
+	findings := convertBulkAdvisories(resp, deps)
+
+	// Both versions should be reported because VulnerableVersions is empty (nil fallback)
+	if len(findings) != 2 {
+		t.Errorf("Expected 2 findings (nil fallback reports all versions), got %d", len(findings))
 	}
 }
 
@@ -537,9 +704,11 @@ func BenchmarkConvertBulkAdvisories(b *testing.B) {
 		name := "test-pkg-" + string(rune('a'+i%26))
 		resp[name] = []bulkAdvisory{
 			{
-				ID:       i,
-				Title:    "Test Vulnerability",
-				Severity: "high",
+				ID:                 i,
+				Title:              "Test Vulnerability",
+				Severity:           "high",
+				VulnerableVersions: "<2.0.0",
+				PatchedVersions:    ">=2.0.0",
 			},
 		}
 		deps = append(deps, types.Dependency{Name: name, Version: "1.0.0"})

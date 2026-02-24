@@ -1,4 +1,8 @@
+<div align="center">
+
 # supplyscan
+
+**Security scanner for JavaScript lockfiles — detects supply chain compromises and known vulnerabilities.**
 
 [![GitHub Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
@@ -7,24 +11,36 @@
 
 [![macOS](https://img.shields.io/badge/macOS-black?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)](https://github.com/seanhalberthal/supplyscan/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-0078D4?style=flat&logo=windows&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/seanhalberthal/supplyscan/pkgs/container/supplyscan)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg?style=flat)](https://modelcontextprotocol.io)
 
-A security scanner for JavaScript ecosystem lockfiles that detects supply chain compromises and known vulnerabilities. Works as a standalone CLI tool or as an MCP server for AI agent integration.
+[Quick Start](#quick-start) · [Installation](#installation) · [CLI Usage](#cli-usage) · [MCP Server](#mcp-server-integration) · [Data Sources](#data-sources)
 
-Built in Go rather than as an npm package, making it immune to npm supply chain attacks by design.
+</div>
+
+---
+
+## Quick Start
+
+```bash
+brew install seanhalberthal/tap/supplyscan
+
+supplyscan scan                       # scan current directory
+supplyscan check lodash 4.17.20      # check a specific package
+```
+
+---
 
 ## Features
 
-- **Supply chain detection**: Identifies compromised packages by aggregating multiple IOC sources (DataDog, GitHub Advisory Database, OSV.dev)
-- **Vulnerability scanning**: Integrates with npm audit API to find known CVEs
-- **Multi-format support**: Parses lockfiles from npm, Yarn (classic & berry), pnpm, Bun, and Deno
-- **Dual interface**: Standalone CLI with styled output, or MCP server for AI agents
-- **CI/CD friendly**: JSON output mode for scripting and automation
-- **Per-source caching**: Each IOC source cached independently with configurable TTL
+- **Supply chain detection** — aggregates IOCs from DataDog, GitHub Advisory Database, and OSV.dev
+- **Vulnerability scanning** — integrates with npm audit API for known CVEs
+- **Multi-format lockfiles** — npm, Yarn (classic & berry), pnpm, Bun, and Deno
+- **Dual interface** — standalone CLI with styled output, or MCP server for AI agents
+- **CI/CD friendly** — JSON output mode for scripting and automation
+- **Per-source caching** — each IOC source cached independently with configurable TTL
 
-## Supported Lockfiles
+### Supported Lockfiles
 
 | Package Manager | Lockfile |
 |-----------------|----------|
@@ -35,32 +51,28 @@ Built in Go rather than as an npm package, making it immune to npm supply chain 
 | Bun | `bun.lock` |
 | Deno | `deno.lock` |
 
-## Quick Start
+Built in Go rather than as an npm package, making it immune to npm supply chain attacks by design.
+
+---
+
+## Installation
+
+### Homebrew
 
 ```bash
-# Install
+brew install seanhalberthal/tap/supplyscan
+```
+
+### Go Install
+
+```bash
 go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
-
-# Scan current directory
-supplyscan scan
-
-# Check a specific package
-supplyscan check lodash 4.17.20
 ```
 
 Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
 
-## Installation
-
-### Go Install (Recommended)
-
-```bash
-go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
-```
-
-Ensure `$GOPATH/bin` (or `$HOME/go/bin`) is in your PATH.
-
-### Download Binary
+<details>
+<summary><b>Download binary</b></summary>
 
 Pre-built binaries are available from [GitHub Releases](https://github.com/seanhalberthal/supplyscan/releases):
 
@@ -78,7 +90,10 @@ curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/su
   -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 ```
 
-### Build from Source
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
 
 ```bash
 git clone https://github.com/seanhalberthal/supplyscan.git
@@ -87,9 +102,13 @@ go build -o supplyscan ./cmd/supplyscan
 mv supplyscan /usr/local/bin/
 ```
 
+</details>
+
+---
+
 ## CLI Usage
 
-The CLI is the default mode—no flags required.
+The CLI is the default mode — no flags required.
 
 ```bash
 # Scan current directory
@@ -123,24 +142,16 @@ supplyscan check lodash 4.17.20 --json
 supplyscan help
 ```
 
+---
+
 ## MCP Server Integration
 
 For AI agent integration (Claude Code, Cursor, etc.), supplyscan runs as an MCP server with the `--mcp` flag.
 
-### Claude Code Quick Start
+### Claude Code
 
 ```bash
-go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest && \
-claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
-```
-
-Restart Claude Code to activate. Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
-
-### Claude Code (Manual)
-
-If you've already installed supplyscan:
-
-```bash
+brew install seanhalberthal/tap/supplyscan && \
 claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
 
@@ -168,7 +179,10 @@ Add to your MCP config file:
 | `supplyscan_check` | Check single package@version |
 | `supplyscan_refresh` | Update IOC database from upstream sources |
 
-#### `supplyscan_scan` Parameters
+<details>
+<summary><b>Tool parameters</b></summary>
+
+#### `supplyscan_scan`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -176,45 +190,53 @@ Add to your MCP config file:
 | `recursive` | boolean | Scan subdirectories for lockfiles |
 | `include_dev` | boolean | Include dev dependencies |
 
-#### `supplyscan_check` Parameters
+#### `supplyscan_check`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `package` | string | Package name |
 | `version` | string | Package version |
 
-#### `supplyscan_refresh` Parameters
+#### `supplyscan_refresh`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `force` | boolean | Force refresh even if cache is fresh |
 
+</details>
+
+---
+
 ## Updating
 
-To update to the latest version:
-
 ```bash
+# Homebrew
+brew upgrade supplyscan
+
+# Go
 go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
 ```
 
 Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current version.
 
+---
+
 ## Data Sources
 
 ### IOC Sources (Aggregated)
 
-- **DataDog IOC Database**: [Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) - Shai-Hulud campaign packages
-- **GitHub Advisory Database**: [Security Advisories](https://github.com/advisories) - npm malware advisories (GHSA)
-- **OSV.dev**: [Open Source Vulnerabilities](https://osv.dev) - npm malware entries from the MAL ecosystem
+- **DataDog IOC Database** — [Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) — Shai-Hulud campaign packages
+- **GitHub Advisory Database** — [Security Advisories](https://github.com/advisories) — npm malware advisories (GHSA)
+- **OSV.dev** — [Open Source Vulnerabilities](https://osv.dev) — npm malware entries from the MAL ecosystem
 
 ### Vulnerability Data
 
-- **npm Audit API**: [Registry audit endpoint](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities) - known CVEs
+- **npm Audit API** — [Registry audit endpoint](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities) — known CVEs
 
 ---
 
 <details>
-<summary><strong>Docker (Alternative)</strong></summary>
+<summary><b>Docker</b></summary>
 
 If you prefer containerised execution, supplyscan is available as a Docker image. Note that you must mount your project directory into the container.
 
