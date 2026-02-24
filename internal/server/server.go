@@ -29,7 +29,7 @@ func Run(s scanner.Scanner) {
 
 	registerTools(server)
 
-	if err := server.Run(context.Background(), mcp.NewStdioTransport()); err != nil {
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -93,7 +93,7 @@ type refreshOutput struct {
 
 // Tool handlers
 
-func handleStatus(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[statusInput]) (*mcp.CallToolResultFor[statusOutput], error) {
+func handleStatus(_ context.Context, _ *mcp.CallToolRequest, _ statusInput) (*mcp.CallToolResult, statusOutput, error) {
 	status := statusOutput{
 		StatusResponse: types.StatusResponse{
 			Version:            types.Version,
@@ -102,16 +102,12 @@ func handleStatus(context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[st
 		},
 	}
 
-	return &mcp.CallToolResultFor[statusOutput]{
-		Content:           []mcp.Content{},
-		StructuredContent: status,
-	}, nil
+	return nil, status, nil
 }
 
-func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[scanInput]) (*mcp.CallToolResultFor[scanOutput], error) {
-	input := params.Arguments
+func handleScan(_ context.Context, _ *mcp.CallToolRequest, input scanInput) (*mcp.CallToolResult, scanOutput, error) {
 	if input.Path == "" {
-		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, fmt.Errorf("path is required")
+		return nil, scanOutput{}, fmt.Errorf("path is required")
 	}
 
 	// Default to including dev dependencies (matches CLI behaviour)
@@ -126,43 +122,33 @@ func handleScan(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolPar
 		IncludeDev: includeDev,
 	})
 	if err != nil {
-		return &mcp.CallToolResultFor[scanOutput]{IsError: true}, err
+		return nil, scanOutput{}, err
 	}
 
-	return &mcp.CallToolResultFor[scanOutput]{
-		Content:           []mcp.Content{},
-		StructuredContent: scanOutput{ScanResult: *result},
-	}, nil
+	return nil, scanOutput{ScanResult: *result}, nil
 }
 
-func handleCheck(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[checkInput]) (*mcp.CallToolResultFor[checkOutput], error) {
-	input := params.Arguments
+func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*mcp.CallToolResult, checkOutput, error) {
 	if input.Package == "" {
-		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, fmt.Errorf("package is required")
+		return nil, checkOutput{}, fmt.Errorf("package is required")
 	}
 	if input.Version == "" {
-		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, fmt.Errorf("version is required")
+		return nil, checkOutput{}, fmt.Errorf("version is required")
 	}
 
 	result, err := scan.CheckPackage(input.Package, input.Version)
 	if err != nil {
-		return &mcp.CallToolResultFor[checkOutput]{IsError: true}, err
+		return nil, checkOutput{}, err
 	}
 
-	return &mcp.CallToolResultFor[checkOutput]{
-		Content:           []mcp.Content{},
-		StructuredContent: checkOutput{CheckResult: *result},
-	}, nil
+	return nil, checkOutput{CheckResult: *result}, nil
 }
 
-func handleRefresh(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[refreshInput]) (*mcp.CallToolResultFor[refreshOutput], error) {
-	result, err := scan.Refresh(params.Arguments.Force)
+func handleRefresh(_ context.Context, _ *mcp.CallToolRequest, input refreshInput) (*mcp.CallToolResult, refreshOutput, error) {
+	result, err := scan.Refresh(input.Force)
 	if err != nil {
-		return &mcp.CallToolResultFor[refreshOutput]{IsError: true}, err
+		return nil, refreshOutput{}, err
 	}
 
-	return &mcp.CallToolResultFor[refreshOutput]{
-		Content:           []mcp.Content{},
-		StructuredContent: refreshOutput{RefreshResult: *result},
-	}, nil
+	return nil, refreshOutput{RefreshResult: *result}, nil
 }

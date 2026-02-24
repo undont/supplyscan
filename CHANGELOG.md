@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Upgrade MCP Go SDK from v0.2.0 to v1.3.1
+- Migrate server handlers to v1 API signatures
+- Update README for Go 1.26+ requirement and OSV.dev source
+
 ## [1.7.0](https://github.com/seanhalberthal/supplyscan/compare/v1.6.0...v1.7.0)
 
 ### New

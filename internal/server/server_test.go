@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
@@ -84,32 +82,16 @@ func newDefaultMock() *mockScanner {
 	}
 }
 
-// getStructuredContent returns the StructuredContent from a result.
-func getStructuredContent[T any](t *testing.T, result *mcp.CallToolResultFor[T]) T {
-	t.Helper()
-	return result.StructuredContent
-}
-
 // TestHandleStatus tests the status handler.
 func TestHandleStatus(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[statusInput]{
-		Arguments: statusInput{},
-	}
-
-	result, err := handleStatus(context.Background(), nil, params)
+	_, status, err := handleStatus(context.Background(), nil, statusInput{})
 	if err != nil {
 		t.Fatalf("handleStatus() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleStatus() returned IsError = true")
-	}
-
-	// Verify status response structure
-	status := getStructuredContent(t, result)
 	if status.Version != types.Version {
 		t.Errorf("Version = %q, want %q", status.Version, types.Version)
 	}
@@ -126,24 +108,15 @@ func TestHandleScan_ValidPath(t *testing.T) {
 	setupMockScanner(mock)
 
 	includeDev := true
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path:       "/tmp/test",
-			Recursive:  false,
-			IncludeDev: &includeDev,
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
+		Path:       "/tmp/test",
+		Recursive:  false,
+		IncludeDev: &includeDev,
+	})
 	if err != nil {
 		t.Fatalf("handleScan() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleScan() returned IsError = true")
-	}
-
-	scanResult := getStructuredContent(t, result)
 	if scanResult.Summary.LockfilesScanned != 1 {
 		t.Errorf("LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
@@ -156,19 +129,10 @@ func TestHandleScan_EmptyPath(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path: "",
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, _, err := handleScan(context.Background(), nil, scanInput{Path: ""})
 
 	if err == nil {
 		t.Error("handleScan() expected error for empty path")
-	}
-	if result == nil || !result.IsError {
-		t.Error("handleScan() expected IsError = true for empty path")
 	}
 	if err.Error() != "path is required" {
 		t.Errorf("Error message = %q, want %q", err.Error(), "path is required")
@@ -181,19 +145,12 @@ func TestHandleScan_InvalidPath(t *testing.T) {
 	}
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path: "/nonexistent/path/that/does/not/exist",
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, _, err := handleScan(context.Background(), nil, scanInput{
+		Path: "/nonexistent/path/that/does/not/exist",
+	})
 
 	if err == nil {
 		t.Error("handleScan() expected error for invalid path")
-	}
-	if result == nil || !result.IsError {
-		t.Error("handleScan() expected IsError = true for invalid path")
 	}
 }
 
@@ -213,19 +170,14 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 	}
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path:      "/tmp/test",
-			Recursive: false,
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
+		Path:      "/tmp/test",
+		Recursive: false,
+	})
 	if err != nil {
 		t.Fatalf("handleScan() error = %v", err)
 	}
 
-	scanResult := getStructuredContent(t, result)
 	if scanResult.Summary.LockfilesScanned != 1 {
 		t.Errorf("Non-recursive: LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
@@ -245,13 +197,14 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 		},
 	}
 
-	params.Arguments.Recursive = true
-	result, err = handleScan(context.Background(), nil, params)
+	_, recursiveResult, err := handleScan(context.Background(), nil, scanInput{
+		Path:      "/tmp/test",
+		Recursive: true,
+	})
 	if err != nil {
 		t.Fatalf("handleScan() recursive error = %v", err)
 	}
 
-	recursiveResult := getStructuredContent(t, result)
 	if recursiveResult.Summary.LockfilesScanned != 2 {
 		t.Errorf("Recursive: LockfilesScanned = %d, want 2", recursiveResult.Summary.LockfilesScanned)
 	}
@@ -274,24 +227,15 @@ func TestHandleScan_IncludeDevDefaultsToTrue(t *testing.T) {
 	}
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path:       "/tmp/test",
-			Recursive:  false,
-			IncludeDev: nil, // Explicitly nil to test default behaviour
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
+		Path:       "/tmp/test",
+		Recursive:  false,
+		IncludeDev: nil, // Explicitly nil to test default behaviour
+	})
 	if err != nil {
 		t.Fatalf("handleScan() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleScan() returned IsError = true")
-	}
-
-	scanResult := getStructuredContent(t, result)
 	if scanResult.Summary.TotalDependencies != 2 {
 		t.Errorf("TotalDependencies = %d, want 2 (dev dependencies should be included by default)", scanResult.Summary.TotalDependencies)
 	}
@@ -314,24 +258,15 @@ func TestHandleScan_IncludeDevExplicitlyFalse(t *testing.T) {
 	setupMockScanner(mock)
 
 	includeDev := false
-	params := &mcp.CallToolParamsFor[scanInput]{
-		Arguments: scanInput{
-			Path:       "/tmp/test",
-			Recursive:  false,
-			IncludeDev: &includeDev,
-		},
-	}
-
-	result, err := handleScan(context.Background(), nil, params)
+	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
+		Path:       "/tmp/test",
+		Recursive:  false,
+		IncludeDev: &includeDev,
+	})
 	if err != nil {
 		t.Fatalf("handleScan() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleScan() returned IsError = true")
-	}
-
-	scanResult := getStructuredContent(t, result)
 	if scanResult.Summary.TotalDependencies != 1 {
 		t.Errorf("TotalDependencies = %d, want 1 (dev dependencies should be excluded)", scanResult.Summary.TotalDependencies)
 	}
@@ -341,23 +276,14 @@ func TestHandleCheck_ValidPackage(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[checkInput]{
-		Arguments: checkInput{
-			Package: "lodash",
-			Version: "4.17.21",
-		},
-	}
-
-	result, err := handleCheck(context.Background(), nil, params)
+	_, checkResult, err := handleCheck(context.Background(), nil, checkInput{
+		Package: "lodash",
+		Version: "4.17.21",
+	})
 	if err != nil {
 		t.Fatalf("handleCheck() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleCheck() returned IsError = true")
-	}
-
-	checkResult := getStructuredContent(t, result)
 	// lodash 4.17.21 is not a compromised package
 	if checkResult.SupplyChain.Compromised {
 		t.Error("Expected lodash@4.17.21 to not be compromised")
@@ -368,20 +294,13 @@ func TestHandleCheck_EmptyPackage(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[checkInput]{
-		Arguments: checkInput{
-			Package: "",
-			Version: "1.0.0",
-		},
-	}
-
-	result, err := handleCheck(context.Background(), nil, params)
+	_, _, err := handleCheck(context.Background(), nil, checkInput{
+		Package: "",
+		Version: "1.0.0",
+	})
 
 	if err == nil {
 		t.Error("handleCheck() expected error for empty package")
-	}
-	if result == nil || !result.IsError {
-		t.Error("handleCheck() expected IsError = true for empty package")
 	}
 	if err.Error() != "package is required" {
 		t.Errorf("Error message = %q, want %q", err.Error(), "package is required")
@@ -392,20 +311,13 @@ func TestHandleCheck_EmptyVersion(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[checkInput]{
-		Arguments: checkInput{
-			Package: "lodash",
-			Version: "",
-		},
-	}
-
-	result, err := handleCheck(context.Background(), nil, params)
+	_, _, err := handleCheck(context.Background(), nil, checkInput{
+		Package: "lodash",
+		Version: "",
+	})
 
 	if err == nil {
 		t.Error("handleCheck() expected error for empty version")
-	}
-	if result == nil || !result.IsError {
-		t.Error("handleCheck() expected IsError = true for empty version")
 	}
 	if err.Error() != "version is required" {
 		t.Errorf("Error message = %q, want %q", err.Error(), "version is required")
@@ -416,20 +328,13 @@ func TestHandleCheck_BothEmpty(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[checkInput]{
-		Arguments: checkInput{
-			Package: "",
-			Version: "",
-		},
-	}
-
-	result, err := handleCheck(context.Background(), nil, params)
+	_, _, err := handleCheck(context.Background(), nil, checkInput{
+		Package: "",
+		Version: "",
+	})
 
 	if err == nil {
 		t.Error("handleCheck() expected error for empty inputs")
-	}
-	if result == nil || !result.IsError {
-		t.Error("handleCheck() expected IsError = true for empty inputs")
 	}
 	// Package is checked first
 	if err.Error() != "package is required" {
@@ -441,22 +346,13 @@ func TestHandleRefresh(t *testing.T) {
 	mock := newDefaultMock()
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[refreshInput]{
-		Arguments: refreshInput{
-			Force: false,
-		},
-	}
-
-	result, err := handleRefresh(context.Background(), nil, params)
+	_, refreshResult, err := handleRefresh(context.Background(), nil, refreshInput{
+		Force: false,
+	})
 	if err != nil {
 		t.Fatalf("handleRefresh() error = %v", err)
 	}
 
-	if result.IsError {
-		t.Error("handleRefresh() returned IsError = true")
-	}
-
-	refreshResult := getStructuredContent(t, result)
 	if refreshResult.PackagesCount < 0 {
 		t.Errorf("PackagesCount = %d, want >= 0", refreshResult.PackagesCount)
 	}
@@ -475,19 +371,11 @@ func TestHandleRefresh_Force(t *testing.T) {
 	}
 	setupMockScanner(mock)
 
-	params := &mcp.CallToolParamsFor[refreshInput]{
-		Arguments: refreshInput{
-			Force: true,
-		},
-	}
-
-	result, err := handleRefresh(context.Background(), nil, params)
+	_, _, err := handleRefresh(context.Background(), nil, refreshInput{
+		Force: true,
+	})
 	if err != nil {
 		t.Fatalf("handleRefresh() force error = %v", err)
-	}
-
-	if result.IsError {
-		t.Error("handleRefresh() force returned IsError = true")
 	}
 }
 
