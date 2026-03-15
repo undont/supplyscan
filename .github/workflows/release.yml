@@ -205,7 +205,8 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           elif [[ "${{ needs.version.outputs.new_tag }}" != "" ]]; then
-            echo "version=${{ needs.version.outputs.new_tag }}" | sed 's/^v/version=/' >> $GITHUB_OUTPUT
+            TAG="${{ needs.version.outputs.new_tag }}"
+            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
           else
             echo "version=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
@@ -278,7 +279,8 @@ jobs:
         id: docker_version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ inputs.tag }}" | sed 's/^v/version=/' >> $GITHUB_OUTPUT
+            TAG="${{ inputs.tag }}"
+            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT

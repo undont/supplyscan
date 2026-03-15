@@ -1,7 +1,10 @@
 // Package types defines shared data structures for supplyscan.
 package types
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"strings"
+)
 
 // Version is the application version. Set at build time via -ldflags.
 // Falls back to module version from go install, or "dev" for local builds.
@@ -15,6 +18,8 @@ func init() {
 			Version = info.Main.Version
 		}
 	}
+	// Normalise version: strip "v" prefix
+	Version = strings.TrimPrefix(Version, "v")
 }
 
 // Dependency represents a single package dependency from a lockfile.

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fix version display showing garbled string due to broken sed in release workflow
+- Strip `v` prefix from version output (e.g. `1.8.2` instead of `v1.8.2`)
+
+## [1.8.2](https://github.com/seanhalberthal/supplyscan/compare/v1.8.1...v1.8.2)
+
 - Fix OSV source fetching all entries individually (N+1 HTTP requests) by switching to bulk zip download
 
 ## [1.8.1](https://github.com/seanhalberthal/supplyscan/compare/v1.8.0...v1.8.1)
