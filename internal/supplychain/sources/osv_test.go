@@ -1,6 +1,8 @@
 package sources
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -10,6 +12,29 @@ import (
 
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
+
+// buildTestZip creates an in-memory zip archive from a map of filename -> vulnerability.
+func buildTestZip(t *testing.T, entries map[string]*osvVulnerability) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+
+	for name, vuln := range entries {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatalf("failed to create zip entry %q: %v", name, err)
+		}
+		if err := json.NewEncoder(f).Encode(vuln); err != nil {
+			t.Fatalf("failed to encode entry %q: %v", name, err)
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close zip writer: %v", err)
+	}
+
+	return buf.Bytes()
+}
 
 func TestOSVSource_Name(t *testing.T) {
 	src := NewOSVSource()
@@ -26,33 +51,17 @@ func TestOSVSource_CacheTTL(t *testing.T) {
 }
 
 func TestOSVSource_WithOptions(t *testing.T) {
-	customList := "https://example.com/list"
-	customBase := "https://example.com/base"
+	customZip := "https://example.com/all.zip"
 
-	src := NewOSVSource(
-		WithOSVListURL(customList),
-		WithOSVBaseURL(customBase),
-	)
+	src := NewOSVSource(WithOSVZipURL(customZip))
 
-	if src.listURL != customList {
-		t.Errorf("listURL = %q, want %q", src.listURL, customList)
-	}
-	if src.baseURL != customBase {
-		t.Errorf("baseURL = %q, want %q", src.baseURL, customBase)
+	if src.zipURL != customZip {
+		t.Errorf("zipURL = %q, want %q", src.zipURL, customZip)
 	}
 }
 
 func TestOSVSource_Fetch_Success(t *testing.T) {
-	// Mock GCS list response
-	listResponse := gcsListResponse{
-		Items: []gcsObject{
-			{Name: "npm/MAL-2025-0001.json"},
-			{Name: "npm/MAL-2025-0002.json"},
-		},
-	}
-
-	// Mock OSV vulnerability entries
-	vuln1 := osvVulnerability{
+	vuln1 := &osvVulnerability{
 		ID:      "MAL-2025-0001",
 		Summary: "Malicious package: evil-pkg",
 		Aliases: []string{"GHSA-aaaa-bbbb-cccc"},
@@ -64,7 +73,7 @@ func TestOSVSource_Fetch_Success(t *testing.T) {
 		},
 	}
 
-	vuln2 := osvVulnerability{
+	vuln2 := &osvVulnerability{
 		ID:      "MAL-2025-0002",
 		Summary: "Malicious package: typosquat-lodash",
 		Affected: []osvAffected{
@@ -82,36 +91,18 @@ func TestOSVSource_Fetch_Success(t *testing.T) {
 		},
 	}
 
-	// Set up test server
-	mux := http.NewServeMux()
-
-	// GCS list endpoint
-	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
-		// Verify prefix parameter
-		if prefix := r.URL.Query().Get("prefix"); prefix != "npm/MAL-" {
-			t.Errorf("expected prefix=npm/MAL-, got %q", prefix)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(listResponse)
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"MAL-2025-0001.json": vuln1,
+		"MAL-2025-0002.json": vuln2,
 	})
 
-	// Individual entry endpoints
-	mux.HandleFunc("/npm/MAL-2025-0001.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(vuln1)
-	})
-	mux.HandleFunc("/npm/MAL-2025-0002.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(vuln2)
-	})
-
-	server := httptest.NewServer(mux)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
 	defer server.Close()
 
-	src := NewOSVSource(
-		WithOSVListURL(server.URL+"/list"),
-		WithOSVBaseURL(server.URL),
-	)
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
 	data, err := src.Fetch(ctx, server.Client())
@@ -164,16 +155,17 @@ func TestOSVSource_Fetch_Success(t *testing.T) {
 	}
 }
 
-func TestOSVSource_Fetch_EmptyList(t *testing.T) {
-	listResponse := gcsListResponse{Items: nil}
+func TestOSVSource_Fetch_EmptyZip(t *testing.T) {
+	// Zip with no MAL- entries
+	zipData := buildTestZip(t, map[string]*osvVulnerability{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(listResponse)
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
 	}))
 	defer server.Close()
 
-	src := NewOSVSource(WithOSVListURL(server.URL))
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
 	data, err := src.Fetch(ctx, server.Client())
@@ -186,56 +178,35 @@ func TestOSVSource_Fetch_EmptyList(t *testing.T) {
 	}
 }
 
-func TestOSVSource_Fetch_ListError(t *testing.T) {
+func TestOSVSource_Fetch_DownloadError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("error"))
 	}))
 	defer server.Close()
 
-	src := NewOSVSource(WithOSVListURL(server.URL))
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
 	_, err := src.Fetch(ctx, server.Client())
 	if err == nil {
-		t.Error("Fetch() expected error for list failure")
+		t.Error("Fetch() expected error for download failure")
 	}
 }
 
-func TestOSVSource_Fetch_EntryFetchError(t *testing.T) {
-	// List returns entries but individual fetch fails — should gracefully skip
-	listResponse := gcsListResponse{
-		Items: []gcsObject{
-			{Name: "npm/MAL-2025-0001.json"},
-		},
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(listResponse)
-	})
-	mux.HandleFunc("/npm/MAL-2025-0001.json", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	server := httptest.NewServer(mux)
+func TestOSVSource_Fetch_InvalidZip(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write([]byte("not a zip file"))
+	}))
 	defer server.Close()
 
-	src := NewOSVSource(
-		WithOSVListURL(server.URL+"/list"),
-		WithOSVBaseURL(server.URL),
-	)
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
-	data, err := src.Fetch(ctx, server.Client())
-	if err != nil {
-		t.Fatalf("Fetch() error = %v (should gracefully handle entry errors)", err)
-	}
-
-	// Should return empty packages since the only entry failed
-	if len(data.Packages) != 0 {
-		t.Errorf("len(Packages) = %d, want 0", len(data.Packages))
+	_, err := src.Fetch(ctx, server.Client())
+	if err == nil {
+		t.Error("Fetch() expected error for invalid zip")
 	}
 }
 
@@ -246,7 +217,7 @@ func TestOSVSource_Fetch_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	src := NewOSVSource(WithOSVListURL(server.URL))
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -258,13 +229,7 @@ func TestOSVSource_Fetch_ContextCancelled(t *testing.T) {
 
 func TestOSVSource_Fetch_NonNpmFiltered(t *testing.T) {
 	// Entry that affects Python, not npm — should be filtered out
-	listResponse := gcsListResponse{
-		Items: []gcsObject{
-			{Name: "npm/MAL-2025-0001.json"},
-		},
-	}
-
-	vuln := osvVulnerability{
+	vuln := &osvVulnerability{
 		ID: "MAL-2025-0001",
 		Affected: []osvAffected{
 			{
@@ -274,23 +239,17 @@ func TestOSVSource_Fetch_NonNpmFiltered(t *testing.T) {
 		},
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(listResponse)
-	})
-	mux.HandleFunc("/npm/MAL-2025-0001.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(vuln)
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"MAL-2025-0001.json": vuln,
 	})
 
-	server := httptest.NewServer(mux)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
 	defer server.Close()
 
-	src := NewOSVSource(
-		WithOSVListURL(server.URL+"/list"),
-		WithOSVBaseURL(server.URL),
-	)
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
 	data, err := src.Fetch(ctx, server.Client())
@@ -303,63 +262,29 @@ func TestOSVSource_Fetch_NonNpmFiltered(t *testing.T) {
 	}
 }
 
-func TestOSVSource_Fetch_Pagination(t *testing.T) {
-	requestCount := 0
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
-		pageToken := r.URL.Query().Get("pageToken")
-
-		var resp gcsListResponse
-		if pageToken == "" {
-			resp = gcsListResponse{
-				Items:         []gcsObject{{Name: "npm/MAL-2025-0001.json"}},
-				NextPageToken: "page2",
-			}
-		} else {
-			resp = gcsListResponse{
-				Items: []gcsObject{{Name: "npm/MAL-2025-0002.json"}},
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	})
-
-	vuln := osvVulnerability{
-		ID: "MAL-2025-0001",
+func TestOSVSource_Fetch_NonMalwareFiltered(t *testing.T) {
+	// Non-MAL entries in the zip should be skipped
+	vuln := &osvVulnerability{
+		ID: "GHSA-xxxx-yyyy-zzzz",
 		Affected: []osvAffected{
 			{
-				Package:  osvPackage{Ecosystem: "npm", Name: "pkg1"},
+				Package:  osvPackage{Ecosystem: "npm", Name: "some-pkg"},
 				Versions: []string{"1.0.0"},
 			},
 		},
 	}
-	vuln2 := osvVulnerability{
-		ID: "MAL-2025-0002",
-		Affected: []osvAffected{
-			{
-				Package:  osvPackage{Ecosystem: "npm", Name: "pkg2"},
-				Versions: []string{"2.0.0"},
-			},
-		},
-	}
 
-	mux.HandleFunc("/npm/MAL-2025-0001.json", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(vuln)
-	})
-	mux.HandleFunc("/npm/MAL-2025-0002.json", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(vuln2)
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"GHSA-xxxx-yyyy-zzzz.json": vuln,
 	})
 
-	server := httptest.NewServer(mux)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
 	defer server.Close()
 
-	src := NewOSVSource(
-		WithOSVListURL(server.URL+"/list"),
-		WithOSVBaseURL(server.URL),
-	)
+	src := NewOSVSource(WithOSVZipURL(server.URL))
 	ctx := context.Background()
 
 	data, err := src.Fetch(ctx, server.Client())
@@ -367,12 +292,60 @@ func TestOSVSource_Fetch_Pagination(t *testing.T) {
 		t.Fatalf("Fetch() error = %v", err)
 	}
 
-	if requestCount != 2 {
-		t.Errorf("Expected 2 list requests for pagination, got %d", requestCount)
+	if len(data.Packages) != 0 {
+		t.Errorf("len(Packages) = %d, want 0 (non-MAL entries should be filtered)", len(data.Packages))
+	}
+}
+
+func TestOSVSource_Fetch_MixedEntries(t *testing.T) {
+	// Mix of MAL and non-MAL entries — only MAL should be processed
+	malVuln := &osvVulnerability{
+		ID: "MAL-2025-0001",
+		Affected: []osvAffected{
+			{
+				Package:  osvPackage{Ecosystem: "npm", Name: "evil-pkg"},
+				Versions: []string{"1.0.0"},
+			},
+		},
+	}
+	ghsaVuln := &osvVulnerability{
+		ID: "GHSA-xxxx-yyyy-zzzz",
+		Affected: []osvAffected{
+			{
+				Package:  osvPackage{Ecosystem: "npm", Name: "vulnerable-pkg"},
+				Versions: []string{"2.0.0"},
+			},
+		},
 	}
 
-	if len(data.Packages) != 2 {
-		t.Errorf("len(Packages) = %d, want 2", len(data.Packages))
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"MAL-2025-0001.json":       malVuln,
+		"GHSA-xxxx-yyyy-zzzz.json": ghsaVuln,
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
+	defer server.Close()
+
+	src := NewOSVSource(WithOSVZipURL(server.URL))
+	ctx := context.Background()
+
+	data, err := src.Fetch(ctx, server.Client())
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+
+	if len(data.Packages) != 1 {
+		t.Fatalf("len(Packages) = %d, want 1 (only MAL entry)", len(data.Packages))
+	}
+
+	if _, ok := data.Packages["evil-pkg"]; !ok {
+		t.Error("Packages missing 'evil-pkg'")
+	}
+	if _, ok := data.Packages["vulnerable-pkg"]; ok {
+		t.Error("Packages should not contain 'vulnerable-pkg' (non-MAL entry)")
 	}
 }
 
@@ -504,5 +477,41 @@ func TestMergeOSVVulnerability(t *testing.T) {
 	}
 	if len(packages["test-pkg"].Versions) != 2 {
 		t.Errorf("Expected 2 versions after merge, got %v", packages["test-pkg"].Versions)
+	}
+}
+
+func TestProcessZip(t *testing.T) {
+	vuln := &osvVulnerability{
+		ID: "MAL-2025-0001",
+		Affected: []osvAffected{
+			{
+				Package:  osvPackage{Ecosystem: "npm", Name: "test-pkg"},
+				Versions: []string{"1.0.0"},
+			},
+		},
+	}
+
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"MAL-2025-0001.json": vuln,
+	})
+
+	packages, err := processZip(zipData)
+	if err != nil {
+		t.Fatalf("processZip() error = %v", err)
+	}
+
+	if len(packages) != 1 {
+		t.Fatalf("len(packages) = %d, want 1", len(packages))
+	}
+
+	if _, ok := packages["test-pkg"]; !ok {
+		t.Error("packages missing 'test-pkg'")
+	}
+}
+
+func TestProcessZip_InvalidData(t *testing.T) {
+	_, err := processZip([]byte("not a zip"))
+	if err == nil {
+		t.Error("processZip() expected error for invalid zip data")
 	}
 }

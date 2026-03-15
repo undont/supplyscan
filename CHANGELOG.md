@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fix OSV source fetching all entries individually (N+1 HTTP requests) by switching to bulk zip download
+
+## [1.8.1](https://github.com/seanhalberthal/supplyscan/compare/v1.8.0...v1.8.1)
+
 - Fix Homebrew tap update being skipped due to GitHub Actions skip-propagation
 - Add standalone workflow_dispatch for manually updating Homebrew tap
 

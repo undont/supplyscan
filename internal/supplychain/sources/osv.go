@@ -1,23 +1,23 @@
 package sources
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
 
 const (
-	// osvGCSListURL is the GCS JSON API endpoint for listing objects in the OSV bucket.
-	osvGCSListURL = "https://storage.googleapis.com/storage/v1/b/osv-vulnerabilities/o"
-
-	// osvGCSBaseURL is the public base URL for fetching individual OSV entries.
-	osvGCSBaseURL = "https://osv-vulnerabilities.storage.googleapis.com"
+	// osvZipURL is the GCS URL for the npm ecosystem bulk zip containing all advisories.
+	osvZipURL = "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"
 
 	// osvCacheTTL is the cache TTL for OSV data (12 hours).
 	osvCacheTTL = 12 * time.Hour
@@ -28,44 +28,35 @@ const (
 	// osvCampaign is the campaign identifier for OSV malware advisories.
 	osvCampaign = "osv-malware"
 
-	// osvMaxEntries is the safety limit on malware entries to fetch.
-	osvMaxEntries = 5000
-
-	// osvFetchConcurrency is the max parallel fetches for individual entries.
-	osvFetchConcurrency = 10
+	// osvMalwarePrefix is the filename prefix for malware advisories in the zip.
+	osvMalwarePrefix = "MAL-"
 )
 
-// OSVSource fetches malware advisories from the OSV.dev database via its
-// public GCS data bucket. It specifically targets npm malware entries
-// (MAL- prefixed IDs) which may include advisories from sources beyond
-// GitHub's Security Advisory Database.
+// OSVSource fetches malware advisories from the OSV.dev database via the
+// npm ecosystem bulk zip from the public GCS data bucket. It filters for
+// MAL- prefixed entries (malware advisories) and extracts package data.
+//
+// This approach downloads a single zip file instead of making thousands of
+// individual HTTP requests, which is dramatically faster when the bucket
+// contains hundreds of thousands of entries.
 type OSVSource struct {
-	listURL string
-	baseURL string
+	zipURL string
 }
 
 // OSVSourceOption configures an OSVSource.
 type OSVSourceOption func(*OSVSource)
 
-// WithOSVListURL sets a custom GCS list URL (for testing).
-func WithOSVListURL(url string) OSVSourceOption {
+// WithOSVZipURL sets a custom zip URL (for testing).
+func WithOSVZipURL(url string) OSVSourceOption {
 	return func(s *OSVSource) {
-		s.listURL = url
-	}
-}
-
-// WithOSVBaseURL sets a custom base URL for fetching entries (for testing).
-func WithOSVBaseURL(url string) OSVSourceOption {
-	return func(s *OSVSource) {
-		s.baseURL = url
+		s.zipURL = url
 	}
 }
 
 // NewOSVSource creates a new OSV.dev IOC source.
 func NewOSVSource(opts ...OSVSourceOption) *OSVSource {
 	s := &OSVSource{
-		listURL: osvGCSListURL,
-		baseURL: osvGCSBaseURL,
+		zipURL: osvZipURL,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -83,25 +74,18 @@ func (s *OSVSource) CacheTTL() time.Duration {
 	return osvCacheTTL
 }
 
-// Fetch retrieves npm malware advisories from the OSV GCS data bucket.
+// Fetch retrieves npm malware advisories by downloading the bulk ecosystem
+// zip and filtering for MAL- prefixed entries.
 func (s *OSVSource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
-	// Step 1: List all MAL- entries for npm
-	entryNames, err := s.listMalwareEntries(ctx, client)
+	zipData, err := s.downloadZip(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list OSV malware entries: %w", err)
+		return nil, fmt.Errorf("failed to download OSV zip: %w", err)
 	}
 
-	if len(entryNames) == 0 {
-		return &types.SourceData{
-			Source:    s.Name(),
-			Campaign:  osvCampaign,
-			Packages:  make(map[string]types.SourcePackage),
-			FetchedAt: time.Now().UTC().Format(time.RFC3339),
-		}, nil
+	packages, err := processZip(zipData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process OSV zip: %w", err)
 	}
-
-	// Step 2: Fetch entries concurrently
-	packages := s.fetchEntries(ctx, client, entryNames)
 
 	return &types.SourceData{
 		Source:    s.Name(),
@@ -111,65 +95,24 @@ func (s *OSVSource) Fetch(ctx context.Context, client *http.Client) (*types.Sour
 	}, nil
 }
 
-// gcsListResponse is the response from the GCS JSON API list objects endpoint.
-type gcsListResponse struct {
-	Items         []gcsObject `json:"items"`
-	NextPageToken string      `json:"nextPageToken"`
-}
-
-// gcsObject represents an object in the GCS bucket.
-type gcsObject struct {
-	Name string `json:"name"`
-}
-
-// listMalwareEntries uses the GCS JSON API to list all MAL- prefixed npm entries.
-func (s *OSVSource) listMalwareEntries(ctx context.Context, client *http.Client) ([]string, error) {
-	var entries []string
-	pageToken := ""
-
-	for {
-		url := s.listURL + "?prefix=npm/MAL-&fields=items(name),nextPageToken&maxResults=1000"
-		if pageToken != "" {
-			url += "&pageToken=" + pageToken
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create list request: %w", err)
-		}
-
-		resp, err := client.Do(req) //nolint:gosec // URL is the configured GCS list endpoint
-		if err != nil {
-			return nil, fmt.Errorf("failed to list objects: %w", err)
-		}
-
-		var listResp gcsListResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&listResp)
-		_ = resp.Body.Close()
-		if decodeErr != nil {
-			return nil, fmt.Errorf("failed to decode list response: %w", decodeErr)
-		}
-
-		for _, item := range listResp.Items {
-			// Only include .json files (skip directories or other artefacts)
-			if strings.HasSuffix(item.Name, ".json") {
-				entries = append(entries, item.Name)
-			}
-		}
-
-		// Safety limit
-		if len(entries) >= osvMaxEntries {
-			entries = entries[:osvMaxEntries]
-			break
-		}
-
-		if listResp.NextPageToken == "" {
-			break
-		}
-		pageToken = listResp.NextPageToken
+// downloadZip fetches the bulk ecosystem zip from GCS.
+func (s *OSVSource) downloadZip(ctx context.Context, client *http.Client) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.zipURL, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	return entries, nil
+	resp, err := client.Do(req) //nolint:gosec // URL is the configured OSV GCS endpoint
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch zip: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
 }
 
 // osvVulnerability represents an OSV vulnerability entry.
@@ -212,64 +155,42 @@ type osvEvent struct {
 	Fixed      string `json:"fixed"`
 }
 
-// fetchEntries fetches individual OSV entries concurrently and builds the package map.
-func (s *OSVSource) fetchEntries(ctx context.Context, client *http.Client, entryNames []string) map[string]types.SourcePackage {
-	packages := make(map[string]types.SourcePackage)
-	var mu sync.Mutex
-
-	// Use a semaphore channel to limit concurrency
-	sem := make(chan struct{}, osvFetchConcurrency)
-
-	var wg sync.WaitGroup
-	for _, name := range entryNames {
-		wg.Add(1)
-		go func(entryName string) {
-			defer wg.Done()
-
-			// Acquire semaphore
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				return
-			}
-
-			vuln, err := s.fetchEntry(ctx, client, entryName)
-			if err != nil || vuln == nil {
-				return
-			}
-
-			mu.Lock()
-			mergeOSVVulnerability(packages, vuln)
-			mu.Unlock()
-		}(name)
+// processZip reads a zip archive and extracts malware advisory data from MAL- prefixed entries.
+func processZip(data []byte) (map[string]types.SourcePackage, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open zip: %w", err)
 	}
 
-	wg.Wait()
-	return packages
+	packages := make(map[string]types.SourcePackage)
+
+	for _, file := range reader.File {
+		name := path.Base(file.Name)
+		if !strings.HasPrefix(name, osvMalwarePrefix) || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		vuln, err := readZipEntry(file)
+		if err != nil {
+			continue // skip individual entry errors
+		}
+
+		mergeOSVVulnerability(packages, vuln)
+	}
+
+	return packages, nil
 }
 
-// fetchEntry fetches and parses a single OSV vulnerability entry.
-func (s *OSVSource) fetchEntry(ctx context.Context, client *http.Client, entryName string) (*osvVulnerability, error) {
-	url := s.baseURL + "/" + entryName
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+// readZipEntry opens and decodes a single zip entry as an OSV vulnerability.
+func readZipEntry(file *zip.File) (*osvVulnerability, error) {
+	rc, err := file.Open()
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := client.Do(req) //nolint:gosec // URL is the configured OSV GCS endpoint
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, entryName)
-	}
+	defer rc.Close()
 
 	var vuln osvVulnerability
-	if err := json.NewDecoder(resp.Body).Decode(&vuln); err != nil {
+	if err := json.NewDecoder(rc).Decode(&vuln); err != nil {
 		return nil, err
 	}
 

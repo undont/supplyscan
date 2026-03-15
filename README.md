@@ -1,6 +1,8 @@
 <div align="center">
 
-# supplyscan
+<img src=".github/assets/logo.svg" alt="supplyscan" width="520">
+
+<br>
 
 **Security scanner for JavaScript lockfiles — detects supply chain compromises and known vulnerabilities.**
 
