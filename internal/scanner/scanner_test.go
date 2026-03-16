@@ -211,6 +211,17 @@ func TestScan_SingleLockfile(t *testing.T) {
 	if result.Vulnerabilities.Findings == nil {
 		t.Error("Vulnerabilities.Findings is nil")
 	}
+
+	// Verify timing is populated
+	if result.Timing == nil {
+		t.Fatal("Timing is nil")
+	}
+	if result.Timing.TotalMs <= 0 {
+		t.Error("Timing.TotalMs should be > 0")
+	}
+	if len(result.Timing.Lockfiles) != 1 {
+		t.Errorf("Timing.Lockfiles count = %d, want 1", len(result.Timing.Lockfiles))
+	}
 }
 
 func TestScan_ExcludeDevDependencies(t *testing.T) {
@@ -457,6 +468,14 @@ func TestCheckPackage(t *testing.T) {
 	if result.Vulnerabilities == nil {
 		t.Error("Vulnerabilities is nil")
 	}
+
+	// Verify timing is populated
+	if result.Timing == nil {
+		t.Fatal("Timing is nil")
+	}
+	if result.Timing.TotalMs <= 0 {
+		t.Error("Timing.TotalMs should be > 0")
+	}
 }
 
 func TestGetStatus(t *testing.T) {
@@ -519,6 +538,14 @@ func TestScanResult_JSONMarshaling(t *testing.T) {
 		Lockfiles: []types.LockfileInfo{
 			{Path: "/test/package-lock.json", Type: "npm", Dependencies: 50},
 		},
+		Timing: &types.ScanTiming{
+			TotalMs:         1500,
+			IOCLoadMs:       10,
+			FindLockfilesMs: 3,
+			Lockfiles: []types.LockfileTiming{
+				{Path: "/test/package-lock.json", ParseMs: 45, SupplyChainMs: 2, AuditMs: 1400, TotalMs: 1447},
+			},
+		},
 	}
 
 	data, err := json.Marshal(result)
@@ -536,6 +563,18 @@ func TestScanResult_JSONMarshaling(t *testing.T) {
 	}
 	if len(parsed.SupplyChain.Findings) != 1 {
 		t.Errorf("SupplyChain.Findings = %d, want 1", len(parsed.SupplyChain.Findings))
+	}
+	if parsed.Timing == nil {
+		t.Fatal("Timing is nil after round-trip")
+	}
+	if parsed.Timing.TotalMs != 1500 {
+		t.Errorf("Timing.TotalMs = %d, want 1500", parsed.Timing.TotalMs)
+	}
+	if len(parsed.Timing.Lockfiles) != 1 {
+		t.Errorf("Timing.Lockfiles = %d, want 1", len(parsed.Timing.Lockfiles))
+	}
+	if parsed.Timing.Lockfiles[0].AuditMs != 1400 {
+		t.Errorf("Timing.Lockfiles[0].AuditMs = %d, want 1400", parsed.Timing.Lockfiles[0].AuditMs)
 	}
 }
 

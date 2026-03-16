@@ -224,6 +224,7 @@ func printScanResult(result *types.ScanResult) {
 	printSupplyChainWarnings(result.SupplyChain.Warnings)
 	printVulnerabilities(result.Vulnerabilities.Findings)
 	printLockfiles(result.Lockfiles)
+	printScanTiming(result.Timing)
 }
 
 func printScanSummary(result *types.ScanResult) {
@@ -376,6 +377,8 @@ func runCheck(scan scanner.Scanner, pkg, version string) {
 	} else {
 		fmt.Println(formatSuccess("No known vulnerabilities"))
 	}
+
+	printCheckTiming(result.Timing)
 }
 
 func runRefresh(scan scanner.Scanner, force bool) {
@@ -425,16 +428,63 @@ func runRefresh(scan scanner.Scanner, force bool) {
 		fmt.Println()
 		fmt.Println(formatSection("Sources"))
 		for name, sr := range result.SourceResults {
-			status := checkStyle.Render(checkMark)
-			if sr.Error != "" {
-				status = crossStyle.Render(crossMark)
-			}
-			fmt.Printf("  %s %s (%d packages)\n", status, name, sr.PackageCount)
-			if sr.Error != "" {
-				fmt.Printf("    %s\n", errorStyle.Render(sr.Error))
-			}
+			printSourceRefreshLine(name, sr)
 		}
 	}
+
+	if result.Timing != nil {
+		fmt.Printf("\n%s %dms\n", formatLabel("Completed in"), result.Timing.TotalMs)
+	}
+}
+
+func printSourceRefreshLine(name string, sr types.SourceRefreshInfo) {
+	status := checkStyle.Render(checkMark)
+	if sr.Error != "" {
+		status = crossStyle.Render(crossMark)
+	}
+	if sr.FetchMs > 0 {
+		fmt.Printf("  %s %s %s\n", status, name,
+			formatMuted(fmt.Sprintf("(%d packages, %dms)", sr.PackageCount, sr.FetchMs)))
+	} else {
+		fmt.Printf("  %s %s %s\n", status, name,
+			formatMuted(fmt.Sprintf("(%d packages)", sr.PackageCount)))
+	}
+	if sr.Error != "" {
+		fmt.Printf("    %s\n", errorStyle.Render(sr.Error))
+	}
+}
+
+func printScanTiming(timing *types.ScanTiming) {
+	if timing == nil {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(formatSection("Timing"))
+	fmt.Printf("  %s %dms\n", formatLabel("Total"), timing.TotalMs)
+	fmt.Printf("  %s %dms\n", formatLabel("IOC load"), timing.IOCLoadMs)
+	fmt.Printf("  %s %dms\n", formatLabel("Find lockfiles"), timing.FindLockfilesMs)
+
+	for _, lf := range timing.Lockfiles {
+		fmt.Printf("  %s %s %s\n",
+			formatMuted(bullet),
+			lf.Path,
+			formatMuted(fmt.Sprintf("(%dms: parse %dms, supply chain %dms, audit %dms)",
+				lf.TotalMs, lf.ParseMs, lf.SupplyChainMs, lf.AuditMs)))
+	}
+}
+
+func printCheckTiming(timing *types.CheckTiming) {
+	if timing == nil {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(formatSection("Timing"))
+	fmt.Printf("  %s %dms\n", formatLabel("Total"), timing.TotalMs)
+	fmt.Printf("  %s %dms\n", formatLabel("IOC load"), timing.IOCLoadMs)
+	fmt.Printf("  %s %dms\n", formatLabel("Supply chain"), timing.SupplyChainMs)
+	fmt.Printf("  %s %dms\n", formatLabel("Audit"), timing.AuditMs)
 }
 
 func printJSON(v any) {

@@ -4,6 +4,8 @@
 
 - Fix version display showing garbled string due to broken sed in release workflow
 - Strip `v` prefix from version output (e.g. `1.8.2` instead of `v1.8.2`)
+- Add per-phase timing to scan, check, and refresh operations
+- Add stale-while-revalidate for IOC database loading (instant responses when data is cached)
 
 ## [1.8.2](https://github.com/seanhalberthal/supplyscan/compare/v1.8.1...v1.8.2)
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -302,6 +304,17 @@ func TestAggregator_Refresh_Force(t *testing.T) {
 	if fetchCount < 2 {
 		t.Errorf("Expected at least 2 fetches (initial + force), got %d", fetchCount)
 	}
+
+	// Verify timing is populated
+	if result3.Timing == nil {
+		t.Fatal("Timing is nil on refresh result")
+	}
+	if result3.Timing.TotalMs < 0 {
+		t.Error("Timing.TotalMs should be >= 0")
+	}
+	if _, ok := result3.Timing.Sources["mock"]; !ok {
+		t.Error("Timing.Sources missing 'mock' source timing")
+	}
 }
 
 func TestAggregator_GetStatus(t *testing.T) {
@@ -363,6 +376,354 @@ func TestUniqueStrings(t *testing.T) {
 				t.Errorf("uniqueStrings(%v) = %v (len %d), want len %d", tt.input, got, len(got), tt.want)
 			}
 		})
+	}
+}
+
+// waitForRefreshComplete polls until the aggregator's background refresh finishes.
+func waitForRefreshComplete(t *testing.T, agg *aggregator, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for background refresh to complete")
+			return
+		default:
+			if !agg.refreshing.Load() {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
+func TestAggregator_StaleWhileRevalidate(t *testing.T) {
+	var fetchCount atomic.Int32
+
+	sources := []IOCSource{
+		&mockSource{
+			name:     "test",
+			cacheTTL: 10 * time.Millisecond,
+			fetchFn: func(ctx context.Context, client *http.Client) (*types.SourceData, error) {
+				fetchCount.Add(1)
+				return &types.SourceData{
+					Source:   "test",
+					Campaign: "test-campaign",
+					Packages: map[string]types.SourcePackage{
+						"pkg": {Name: "pkg", Versions: []string{"1.0.0"}},
+					},
+					FetchedAt: time.Now().UTC().Format(time.RFC3339),
+				}, nil
+			},
+		},
+	}
+
+	agg, err := newAggregator(sources, withAggregatorCacheDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Cold start — must block and fetch
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() cold start error = %v", err)
+	}
+	if fetchCount.Load() != 1 {
+		t.Fatalf("expected 1 fetch after cold start, got %d", fetchCount.Load())
+	}
+
+	// Wait for TTL to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Stale path — should return instantly (< 5ms), not block for fetch
+	start := time.Now()
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() stale path error = %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 5*time.Millisecond {
+		t.Errorf("stale-while-revalidate took %v, expected < 5ms", elapsed)
+	}
+
+	// Data should still be available (stale)
+	db := agg.getDatabase()
+	if db == nil {
+		t.Fatal("getDatabase() returned nil during stale-while-revalidate")
+	}
+	if len(db.Packages) != 1 {
+		t.Errorf("expected 1 package, got %d", len(db.Packages))
+	}
+
+	// Wait for background refresh to complete
+	waitForRefreshComplete(t, agg, 5*time.Second)
+
+	if fetchCount.Load() != 2 {
+		t.Errorf("expected 2 total fetches (cold start + background), got %d", fetchCount.Load())
+	}
+}
+
+func TestAggregator_ColdStartBlocks(t *testing.T) {
+	sources := []IOCSource{
+		&mockSource{
+			name:     "slow",
+			cacheTTL: time.Hour,
+			fetchFn: func(ctx context.Context, client *http.Client) (*types.SourceData, error) {
+				time.Sleep(100 * time.Millisecond)
+				return &types.SourceData{
+					Source:   "slow",
+					Campaign: "test",
+					Packages: map[string]types.SourcePackage{
+						"pkg": {Name: "pkg", Versions: []string{"1.0.0"}},
+					},
+					FetchedAt: time.Now().UTC().Format(time.RFC3339),
+				}, nil
+			},
+		},
+	}
+
+	agg, err := newAggregator(sources, withAggregatorCacheDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	start := time.Now()
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() error = %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("cold start took %v, expected >= 100ms (should block for fetch)", elapsed)
+	}
+
+	db := agg.getDatabase()
+	if db == nil {
+		t.Fatal("getDatabase() returned nil after cold start")
+	}
+	if len(db.Packages) != 1 {
+		t.Errorf("expected 1 package, got %d", len(db.Packages))
+	}
+}
+
+func TestAggregator_DeduplicatesBackgroundRefresh(t *testing.T) {
+	var fetchCount atomic.Int32
+
+	sources := []IOCSource{
+		&mockSource{
+			name:     "test",
+			cacheTTL: 10 * time.Millisecond,
+			fetchFn: func(ctx context.Context, client *http.Client) (*types.SourceData, error) {
+				fetchCount.Add(1)
+				// Simulate slow fetch so concurrent calls overlap
+				time.Sleep(50 * time.Millisecond)
+				return &types.SourceData{
+					Source:   "test",
+					Campaign: "test",
+					Packages: map[string]types.SourcePackage{
+						"pkg": {Name: "pkg", Versions: []string{"1.0.0"}},
+					},
+					FetchedAt: time.Now().UTC().Format(time.RFC3339),
+				}, nil
+			},
+		},
+	}
+
+	agg, err := newAggregator(sources, withAggregatorCacheDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Cold start — 1 fetch
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() cold start error = %v", err)
+	}
+
+	// Wait for TTL to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Fire 10 concurrent ensureLoaded calls — should only trigger 1 background refresh
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = agg.ensureLoaded(ctx)
+		}()
+	}
+	wg.Wait()
+
+	// Wait for the single background refresh to complete
+	waitForRefreshComplete(t, agg, 5*time.Second)
+
+	got := fetchCount.Load()
+	if got != 2 {
+		t.Errorf("expected 2 fetches (1 cold start + 1 background), got %d", got)
+	}
+}
+
+func TestAggregator_ConcurrentColdStart(t *testing.T) {
+	var fetchCount atomic.Int32
+
+	sources := []IOCSource{
+		&mockSource{
+			name:     "test",
+			cacheTTL: time.Hour,
+			fetchFn: func(ctx context.Context, client *http.Client) (*types.SourceData, error) {
+				fetchCount.Add(1)
+				time.Sleep(100 * time.Millisecond)
+				return &types.SourceData{
+					Source:   "test",
+					Campaign: "test",
+					Packages: map[string]types.SourcePackage{
+						"pkg": {Name: "pkg", Versions: []string{"1.0.0"}},
+					},
+					FetchedAt: time.Now().UTC().Format(time.RFC3339),
+				}, nil
+			},
+		},
+	}
+
+	agg, err := newAggregator(sources, withAggregatorCacheDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Fire 5 concurrent cold-start calls — only 1 should actually fetch
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = agg.ensureLoaded(ctx)
+		}()
+	}
+	wg.Wait()
+
+	got := fetchCount.Load()
+	if got != 1 {
+		t.Errorf("expected 1 fetch (deduplicated cold start), got %d", got)
+	}
+
+	db := agg.getDatabase()
+	if db == nil {
+		t.Fatal("getDatabase() returned nil after concurrent cold start")
+	}
+}
+
+func TestAggregator_DiskCacheOnColdStart(t *testing.T) {
+	cacheDir := t.TempDir()
+
+	sourceData := &types.SourceData{
+		Source:   "test",
+		Campaign: "test",
+		Packages: map[string]types.SourcePackage{
+			"cached-pkg": {Name: "cached-pkg", Versions: []string{"1.0.0"}},
+		},
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// First aggregator: load data and write to disk cache
+	agg1, err := newAggregator(
+		[]IOCSource{&mockSource{name: "test", cacheTTL: time.Hour, data: sourceData}},
+		withAggregatorCacheDir(cacheDir),
+	)
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+	if err := agg1.ensureLoaded(context.Background()); err != nil {
+		t.Fatalf("ensureLoaded() error = %v", err)
+	}
+
+	// Second aggregator: same cache dir, but source always fails
+	agg2, err := newAggregator(
+		[]IOCSource{&mockSource{
+			name:     "test",
+			cacheTTL: time.Hour,
+			err:      errors.New("source unavailable"),
+		}},
+		withAggregatorCacheDir(cacheDir),
+	)
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	// Should load from disk cache despite failing source
+	if err := agg2.ensureLoaded(context.Background()); err != nil {
+		t.Fatalf("ensureLoaded() error = %v", err)
+	}
+
+	db := agg2.getDatabase()
+	if db == nil {
+		t.Fatal("getDatabase() returned nil — expected disk cache to be loaded")
+	}
+	if _, ok := db.Packages["cached-pkg"]; !ok {
+		t.Error("expected 'cached-pkg' from disk cache, not found")
+	}
+}
+
+func TestAggregator_StaleDataSurvivesFailedRefresh(t *testing.T) {
+	var shouldFail atomic.Bool
+
+	sources := []IOCSource{
+		&mockSource{
+			name:     "test",
+			cacheTTL: 10 * time.Millisecond,
+			fetchFn: func(ctx context.Context, client *http.Client) (*types.SourceData, error) {
+				if shouldFail.Load() {
+					return nil, errors.New("source unavailable")
+				}
+				return &types.SourceData{
+					Source:   "test",
+					Campaign: "test",
+					Packages: map[string]types.SourcePackage{
+						"original-pkg": {Name: "original-pkg", Versions: []string{"1.0.0"}},
+					},
+					FetchedAt: time.Now().UTC().Format(time.RFC3339),
+				}, nil
+			},
+		},
+	}
+
+	agg, err := newAggregator(sources, withAggregatorCacheDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("newAggregator() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Load initial data successfully
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() error = %v", err)
+	}
+
+	// Make source fail from now on
+	shouldFail.Store(true)
+
+	// Wait for TTL to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Stale path: should return immediately with stale data
+	if err := agg.ensureLoaded(ctx); err != nil {
+		t.Fatalf("ensureLoaded() stale path error = %v", err)
+	}
+
+	// Wait for the failed background refresh to complete
+	waitForRefreshComplete(t, agg, 5*time.Second)
+
+	// Stale data should still be intact
+	db := agg.getDatabase()
+	if db == nil {
+		t.Fatal("getDatabase() returned nil — stale data should survive failed refresh")
+	}
+	if _, ok := db.Packages["original-pkg"]; !ok {
+		t.Error("expected 'original-pkg' to survive failed background refresh")
 	}
 }
 

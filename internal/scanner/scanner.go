@@ -2,6 +2,8 @@
 package scanner
 
 import (
+	"time"
+
 	"github.com/seanhalberthal/supplyscan/internal/audit"
 	"github.com/seanhalberthal/supplyscan/internal/lockfile"
 	"github.com/seanhalberthal/supplyscan/internal/supplychain"
@@ -44,11 +46,18 @@ type ScanOptions struct {
 
 // Scan performs a full security scan on a project.
 func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
+	scanStart := time.Now()
+	timing := &types.ScanTiming{}
+
 	// Ensure IOC database is loaded (continue without it if unavailable)
+	iocStart := time.Now()
 	_ = s.detector.EnsureLoaded()
+	timing.IOCLoadMs = time.Since(iocStart).Milliseconds()
 
 	// Find lockfiles
+	findStart := time.Now()
 	lockfilePaths, err := lockfile.FindLockfiles(opts.Path, opts.Recursive)
+	timing.FindLockfilesMs = time.Since(findStart).Milliseconds()
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +80,13 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 
 	// Process each lockfile
 	for _, path := range lockfilePaths {
+		lfStart := time.Now()
+		lfTiming := types.LockfileTiming{Path: path}
+
+		// Parse lockfile
+		parseStart := time.Now()
 		lf, err := lockfile.DetectAndParse(path)
+		lfTiming.ParseMs = time.Since(parseStart).Milliseconds()
 		if err != nil {
 			continue // Skip unreadable lockfiles
 		}
@@ -94,7 +109,9 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 		result.Summary.TotalDependencies += len(deps)
 
 		// Check supply chain
+		scStart := time.Now()
 		findings, warnings := s.detector.CheckDependencies(deps)
+		lfTiming.SupplyChainMs = time.Since(scStart).Milliseconds()
 		for i := range findings {
 			findings[i].Lockfile = path
 		}
@@ -102,25 +119,38 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 		result.SupplyChain.Warnings = append(result.SupplyChain.Warnings, warnings...)
 
 		// Audit for vulnerabilities
+		auditStart := time.Now()
 		vulns, err := s.auditClient.AuditDependencies(deps)
+		lfTiming.AuditMs = time.Since(auditStart).Milliseconds()
 		if err == nil {
 			for i := range vulns {
 				vulns[i].Lockfile = path
 			}
 			result.Vulnerabilities.Findings = append(result.Vulnerabilities.Findings, vulns...)
 		}
+
+		lfTiming.TotalMs = time.Since(lfStart).Milliseconds()
+		timing.Lockfiles = append(timing.Lockfiles, lfTiming)
 	}
 
 	// Update issue counts
 	result.Summary.Issues = countIssues(result)
+
+	timing.TotalMs = time.Since(scanStart).Milliseconds()
+	result.Timing = timing
 
 	return result, nil
 }
 
 // CheckPackage checks a single package for issues.
 func (s *defaultScanner) CheckPackage(name, version string) (*types.CheckResult, error) {
+	start := time.Now()
+	timing := &types.CheckTiming{}
+
 	// Ensure IOC database is loaded (continue without it if unavailable)
+	iocStart := time.Now()
 	_ = s.detector.EnsureLoaded()
+	timing.IOCLoadMs = time.Since(iocStart).Milliseconds()
 
 	result := &types.CheckResult{
 		SupplyChain: types.CheckSupplyChainResult{
@@ -130,16 +160,23 @@ func (s *defaultScanner) CheckPackage(name, version string) (*types.CheckResult,
 	}
 
 	// Check supply chain
+	scStart := time.Now()
 	if finding := s.detector.CheckPackage(name, version); finding != nil {
 		result.SupplyChain.Compromised = true
 		result.SupplyChain.Campaigns = []string{finding.Type}
 	}
+	timing.SupplyChainMs = time.Since(scStart).Milliseconds()
 
 	// Audit for vulnerabilities
+	auditStart := time.Now()
 	vulns, err := s.auditClient.AuditSinglePackage(name, version)
+	timing.AuditMs = time.Since(auditStart).Milliseconds()
 	if err == nil && vulns != nil {
 		result.Vulnerabilities = vulns
 	}
+
+	timing.TotalMs = time.Since(start).Milliseconds()
+	result.Timing = timing
 
 	return result, nil
 }

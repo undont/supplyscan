@@ -112,6 +112,7 @@ type ScanResult struct {
 	SupplyChain     SupplyChainResult   `json:"supply_chain"`
 	Vulnerabilities VulnerabilityResult `json:"vulnerabilities"`
 	Lockfiles       []LockfileInfo      `json:"lockfiles"`
+	Timing          *ScanTiming         `json:"timing,omitempty"`
 }
 
 // SupplyChainResult contains all supply chain findings.
@@ -169,6 +170,7 @@ type IOCDatabaseStatus struct {
 type CheckResult struct {
 	SupplyChain     CheckSupplyChainResult `json:"supply_chain"`
 	Vulnerabilities []VulnerabilityInfo    `json:"vulnerabilities"`
+	Timing          *CheckTiming           `json:"timing,omitempty"`
 }
 
 // CheckSupplyChainResult indicates if a package is compromised.
@@ -195,6 +197,7 @@ type RefreshResult struct {
 	VersionsCount int                          `json:"versions_count"`
 	CacheAgeHours int                          `json:"cache_age_hours"`
 	SourceResults map[string]SourceRefreshInfo `json:"source_results,omitempty"` // Per-source refresh results
+	Timing        *RefreshTiming               `json:"timing,omitempty"`
 }
 
 // SourceRefreshInfo contains the result of refreshing a single IOC source.
@@ -203,6 +206,7 @@ type SourceRefreshInfo struct {
 	Updated      bool   `json:"updated"`
 	PackageCount int    `json:"package_count"`
 	Error        string `json:"error,omitempty"`
+	FetchMs      int64  `json:"fetch_ms,omitempty"`
 }
 
 // SourceData contains IOC data retrieved from a single source.
@@ -233,4 +237,35 @@ type SourcePackage struct {
 
 	// Severity indicates the threat level (e.g., "critical", "high").
 	Severity string `json:"severity,omitempty"`
+}
+
+// ScanTiming records per-phase timing for a scan operation.
+type ScanTiming struct {
+	TotalMs         int64            `json:"total_ms"`
+	IOCLoadMs       int64            `json:"ioc_load_ms"`
+	FindLockfilesMs int64            `json:"find_lockfiles_ms"`
+	Lockfiles       []LockfileTiming `json:"lockfiles,omitempty"`
+}
+
+// LockfileTiming records per-lockfile phase timing.
+type LockfileTiming struct {
+	Path          string `json:"path"`
+	ParseMs       int64  `json:"parse_ms"`
+	SupplyChainMs int64  `json:"supply_chain_ms"`
+	AuditMs       int64  `json:"audit_ms"`
+	TotalMs       int64  `json:"total_ms"`
+}
+
+// CheckTiming records timing for a single package check.
+type CheckTiming struct {
+	TotalMs       int64 `json:"total_ms"`
+	IOCLoadMs     int64 `json:"ioc_load_ms"`
+	SupplyChainMs int64 `json:"supply_chain_ms"`
+	AuditMs       int64 `json:"audit_ms"`
+}
+
+// RefreshTiming records timing for the refresh operation.
+type RefreshTiming struct {
+	TotalMs int64            `json:"total_ms"`
+	Sources map[string]int64 `json:"sources,omitempty"`
 }

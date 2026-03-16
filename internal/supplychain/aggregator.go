@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -18,6 +19,12 @@ type aggregator struct {
 	httpClient *http.Client
 	mu         sync.RWMutex
 	db         *types.IOCDatabase
+
+	// Stale-while-revalidate
+	refreshing  atomic.Bool   // true while background refresh is running
+	loaded      atomic.Bool   // true once db has been populated at least once
+	refreshDone chan struct{} // closed when current background refresh completes
+	refreshMu   sync.Mutex    // protects refreshDone channel lifecycle
 }
 
 // AggregatorOption configures an aggregator.
@@ -61,42 +68,117 @@ func newAggregator(sources []IOCSource, opts ...AggregatorOption) (*aggregator, 
 	return agg, nil
 }
 
-// ensureLoaded loads the IOC database, fetching from sources if needed.
+// ensureLoaded loads the IOC database, using stale-while-revalidate when possible.
+// If data is in memory (even stale), it returns immediately and refreshes in the background.
+// Only blocks on first run when no cached data exists at all.
 func (a *aggregator) ensureLoaded(ctx context.Context) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// If already loaded and all sources are fresh, return
-	if a.db != nil && a.allSourcesFresh() {
+	// Fast path: data in memory and all sources fresh
+	if a.loaded.Load() && a.allSourcesFresh() {
 		return nil
 	}
 
-	// Try to load from merged cache first
+	// Stale path: data in memory but sources stale — serve stale, refresh in background
+	if a.loaded.Load() {
+		a.triggerBackgroundRefresh()
+		return nil
+	}
+
+	// Cold start: no data in memory yet
+	// Try disk cache first
 	db, err := a.cache.loadMerged()
-	if err == nil && db != nil && a.allSourcesFresh() {
+	if err == nil && db != nil {
+		a.mu.Lock()
 		a.db = db
-		return nil
-	}
-
-	// Fetch from sources
-	sourceData, _ := a.fetchAll(ctx, false)
-
-	// If we got no data but have cached data, use it (graceful degradation)
-	if len(sourceData) == 0 {
-		if db != nil {
-			a.db = db
+		a.mu.Unlock()
+		a.loaded.Store(true)
+		if !a.allSourcesFresh() {
+			a.triggerBackgroundRefresh()
 		}
 		return nil
 	}
 
-	// Merge source data into unified database
-	a.db = a.mergeSourceData(sourceData)
+	// No disk cache — must fetch synchronously
+	// Deduplicate: if another goroutine is already fetching, wait for it
+	a.refreshMu.Lock()
 
-	// Save to cache (best effort)
-	sourceStatuses := a.buildSourceStatuses(sourceData)
-	_ = a.cache.saveMerged(a.db, sourceStatuses)
+	// Re-check: another goroutine may have completed while we waited
+	if a.loaded.Load() {
+		a.refreshMu.Unlock()
+		return nil
+	}
+
+	// If a refresh is already in progress, wait for it
+	if a.refreshing.Load() {
+		ch := a.refreshDone
+		a.refreshMu.Unlock()
+		if ch != nil {
+			<-ch
+		}
+		return nil
+	}
+
+	// We're the one to fetch
+	a.refreshDone = make(chan struct{})
+	a.refreshing.Store(true)
+	a.refreshMu.Unlock()
+
+	a.doRefresh(ctx)
+
+	// Signal completion
+	a.refreshMu.Lock()
+	close(a.refreshDone)
+	a.refreshDone = nil
+	a.refreshMu.Unlock()
+	a.refreshing.Store(false)
 
 	return nil
+}
+
+// triggerBackgroundRefresh starts a background goroutine to refresh IOC data.
+// Uses CompareAndSwap for deduplication — only one background refresh runs at a time.
+func (a *aggregator) triggerBackgroundRefresh() {
+	if !a.refreshing.CompareAndSwap(false, true) {
+		return // already refreshing
+	}
+
+	a.refreshMu.Lock()
+	a.refreshDone = make(chan struct{})
+	a.refreshMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.refreshMu.Lock()
+			close(a.refreshDone)
+			a.refreshDone = nil
+			a.refreshMu.Unlock()
+			a.refreshing.Store(false)
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		a.doRefresh(ctx)
+	}()
+}
+
+// doRefresh fetches from all sources, merges, and updates the in-memory database.
+// Shared by both cold-start (synchronous) and background refresh paths.
+func (a *aggregator) doRefresh(ctx context.Context) {
+	sourceData, _, _ := a.fetchAll(ctx, false)
+	if len(sourceData) == 0 {
+		return // All sources failed — keep existing stale data
+	}
+
+	db := a.mergeSourceData(sourceData)
+
+	a.mu.Lock()
+	a.db = db
+	a.mu.Unlock()
+	a.loaded.Store(true)
+
+	// Save to disk cache (best effort)
+	sourceStatuses := a.buildSourceStatuses(sourceData)
+	_ = a.cache.saveMerged(db, sourceStatuses)
 }
 
 // allSourcesFresh checks if all sources have fresh cache.
@@ -125,10 +207,12 @@ func (a *aggregator) buildSourceStatuses(sourceData []*types.SourceData) map[str
 
 // refresh fetches fresh data from all sources.
 func (a *aggregator) refresh(ctx context.Context, force bool) (*types.RefreshResult, error) {
+	refreshStart := time.Now()
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	sourceData, sourceErrors := a.fetchAll(ctx, force)
+	sourceData, sourceErrors, sourceTimings := a.fetchAll(ctx, force)
 
 	result := &types.RefreshResult{
 		SourceResults: make(map[string]types.SourceRefreshInfo),
@@ -138,20 +222,28 @@ func (a *aggregator) refresh(ctx context.Context, force bool) (*types.RefreshRes
 	anyUpdated := false
 	for _, data := range sourceData {
 		anyUpdated = true
-		result.SourceResults[data.Source] = types.SourceRefreshInfo{
+		sr := types.SourceRefreshInfo{
 			Name:         data.Source,
 			Updated:      true,
 			PackageCount: len(data.Packages),
 		}
+		if ms, ok := sourceTimings[data.Source]; ok {
+			sr.FetchMs = ms
+		}
+		result.SourceResults[data.Source] = sr
 	}
 
 	// Track errors
 	for name, err := range sourceErrors {
-		result.SourceResults[name] = types.SourceRefreshInfo{
+		sr := types.SourceRefreshInfo{
 			Name:    name,
 			Updated: false,
 			Error:   err.Error(),
 		}
+		if ms, ok := sourceTimings[name]; ok {
+			sr.FetchMs = ms
+		}
+		result.SourceResults[name] = sr
 	}
 
 	// If no sources returned data, return early with cached data info
@@ -161,11 +253,16 @@ func (a *aggregator) refresh(ctx context.Context, force bool) (*types.RefreshRes
 			result.PackagesCount = meta.PackageCount
 			result.VersionsCount = meta.VersionCount
 		}
+		result.Timing = &types.RefreshTiming{
+			TotalMs: time.Since(refreshStart).Milliseconds(),
+			Sources: sourceTimings,
+		}
 		return result, nil
 	}
 
 	// Merge and save
 	a.db = a.mergeSourceData(sourceData)
+	a.loaded.Store(true)
 
 	// Count packages and versions
 	result.PackagesCount = len(a.db.Packages)
@@ -186,6 +283,11 @@ func (a *aggregator) refresh(ctx context.Context, force bool) (*types.RefreshRes
 		}
 	}
 	_ = a.cache.saveMerged(a.db, sourceStatuses)
+
+	result.Timing = &types.RefreshTiming{
+		TotalMs: time.Since(refreshStart).Milliseconds(),
+		Sources: sourceTimings,
+	}
 
 	return result, nil
 }
@@ -233,10 +335,12 @@ func (a *aggregator) getStatus() types.IOCDatabaseStatus {
 }
 
 // fetchAll fetches data from all sources in parallel.
-func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceData, map[string]error) {
+// Returns source data, per-source errors, and per-source timing in milliseconds.
+func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceData, map[string]error, map[string]int64) {
 	var mu sync.Mutex
 	results := make([]*types.SourceData, 0, len(a.sources))
 	errors := make(map[string]error)
+	timings := make(map[string]int64)
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -244,12 +348,15 @@ func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceD
 		routineSrc := src // capture for goroutine
 
 		g.Go(func() error {
+			fetchStart := time.Now()
+
 			// Check if cache is fresh (unless force refresh)
 			if !force && !a.cache.IsSourceStale(routineSrc.Name(), routineSrc.CacheTTL()) {
 				data, err := a.cache.loadSource(routineSrc.Name())
 				if err == nil && data != nil {
 					mu.Lock()
 					results = append(results, data)
+					timings[routineSrc.Name()] = time.Since(fetchStart).Milliseconds()
 					mu.Unlock()
 					return nil
 				}
@@ -258,6 +365,7 @@ func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceD
 			// Fetch from source
 			data, err := routineSrc.Fetch(ctx, a.httpClient)
 			mu.Lock()
+			timings[routineSrc.Name()] = time.Since(fetchStart).Milliseconds()
 			if err != nil {
 				errors[routineSrc.Name()] = err
 			} else if data != nil {
@@ -271,7 +379,7 @@ func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceD
 	}
 
 	_ = g.Wait() // Errors tracked per-source
-	return results, errors
+	return results, errors, timings
 }
 
 // mergeSourceData combines data from multiple sources into a single IOCDatabase.
