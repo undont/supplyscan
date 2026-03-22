@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/briandowns/spinner"
+	"github.com/charmbracelet/huh/spinner"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
@@ -185,17 +185,20 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 		})
 	} else {
 		// Show spinner during scan
-		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		s.Suffix = fmt.Sprintf(" Scanning %s...", path)
-		s.Start()
-
-		result, err = scan.Scan(scanner.ScanOptions{
-			Path:       path,
-			Recursive:  opts.Recursive,
-			IncludeDev: opts.IncludeDev,
-		})
-
-		s.Stop()
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("6")) //nolint:misspell // lipgloss API uses American spelling
+		_ = spinner.New().
+			Title(fmt.Sprintf("Scanning %s...", path)).
+			Action(func() {
+				result, err = scan.Scan(
+					scanner.ScanOptions{
+						Path:       path,
+						Recursive:  opts.Recursive,
+						IncludeDev: opts.IncludeDev,
+					},
+				)
+			}).
+			Style(style).
+			Run()
 	}
 
 	if err != nil {
@@ -388,13 +391,12 @@ func runRefresh(scan scanner.Scanner, force bool) {
 	if outputJSON {
 		result, err = scan.Refresh(force)
 	} else {
-		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		s.Suffix = " Refreshing IOC database..."
-		s.Start()
-
-		result, err = scan.Refresh(force)
-
-		s.Stop()
+		_ = spinner.New().
+			Title("Refreshing IOC database...").
+			Action(func() {
+				result, err = scan.Refresh(force)
+			}).
+			Run()
 	}
 
 	if err != nil {
