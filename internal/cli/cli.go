@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
@@ -185,7 +184,6 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 		})
 	} else {
 		// Show spinner during scan
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("6")) //nolint:misspell // lipgloss API uses American spelling
 		_ = spinner.New().
 			Title(fmt.Sprintf("Scanning %s...", path)).
 			Action(func() {
@@ -197,7 +195,7 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 					},
 				)
 			}).
-			Style(style).
+			Style(spinnerStyle).
 			Run()
 	}
 
@@ -396,6 +394,7 @@ func runRefresh(scan scanner.Scanner, force bool) {
 			Action(func() {
 				result, err = scan.Refresh(force)
 			}).
+			Style(spinnerStyle).
 			Run()
 	}
 

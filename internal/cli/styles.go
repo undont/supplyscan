@@ -35,6 +35,7 @@ var (
 	dividerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	checkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // Green checkmark
 	crossStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red cross
+	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // Cyan spinner
 )
 
 // Symbols for output.
