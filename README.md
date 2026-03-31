@@ -1,20 +1,18 @@
 <div align="center">
 
-<img src=".github/assets/logo.svg" alt="supplyscan" width="520">
-
-<br>
+# supplyscan
 
 **Security scanner for JavaScript lockfiles — detects supply chain compromises and known vulnerabilities.**
 
-[![Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github&logoColor=white&label=Release)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![Licence](https://img.shields.io/github/license/seanhalberthal/supplyscan?style=flat&label=licence&color=3B82F6)](LICENCE)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
-[![Licence](https://img.shields.io/github/license/seanhalberthal/supplyscan?style=flat&label=licence)](LICENCE)
-
-[![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
-[![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat&logo=linux&logoColor=black)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/seanhalberthal/supplyscan/pkgs/container/supplyscan)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg?style=flat)](https://modelcontextprotocol.io)
+
+[![macOS](https://img.shields.io/badge/macOS-supported-6e7681?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-supported-6e7681?style=flat&logo=linux&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![MCP](https://img.shields.io/badge/MCP-compatible-3B82F6?style=flat)](https://modelcontextprotocol.io)
 
 [Quick Start](#quick-start) · [Installation](#installation) · [CLI Usage](#cli-usage) · [MCP Server](#mcp-server-integration) · [Data Sources](#data-sources)
 
