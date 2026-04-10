@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 
+	"github.com/seanhalberthal/supplyscan/internal/findings"
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
@@ -207,11 +208,15 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 
 	if outputJSON {
 		printJSON(result)
-		return
+	} else {
+		// Styled output
+		printScanResult(result)
 	}
 
-	// Styled output
-	printScanResult(result)
+	// Exit with code 2 if vulnerabilities or supply chain issues found
+	if findings.HasScanFindings(result) {
+		exitFunc(2)
+	}
 }
 
 func printScanResult(result *types.ScanResult) {
@@ -259,14 +264,14 @@ func printIssuesSummary(issues *types.IssueCounts) {
 	fmt.Println()
 }
 
-func printSupplyChainFindings(findings []types.SupplyChainFinding) {
-	if len(findings) == 0 {
+func printSupplyChainFindings(scFindings []types.SupplyChainFinding) {
+	if len(scFindings) == 0 {
 		return
 	}
 
 	fmt.Println(formatSection("Supply Chain Compromises"))
-	for i := range findings {
-		f := &findings[i]
+	for i := range scFindings {
+		f := &scFindings[i]
 		fmt.Printf("  %s %s\n", crossStyle.Render(crossMark), formatPackageVersion(f.Package, f.InstalledVersion))
 		fmt.Printf("    %s %s\n", formatLabel("Severity"), formatSeverity(f.Severity))
 		fmt.Printf("    %s %s\n", formatLabel("Type"), f.Type)
@@ -294,14 +299,14 @@ func printSupplyChainWarnings(warnings []types.SupplyChainWarning) {
 	fmt.Println()
 }
 
-func printVulnerabilities(findings []types.VulnerabilityFinding) {
-	if len(findings) == 0 {
+func printVulnerabilities(vulnFindings []types.VulnerabilityFinding) {
+	if len(vulnFindings) == 0 {
 		return
 	}
 
 	fmt.Println(formatSection("Vulnerabilities"))
-	for i := range findings {
-		v := &findings[i]
+	for i := range vulnFindings {
+		v := &vulnFindings[i]
 		fmt.Printf("  %s %s\n", severityStyle(v.Severity).Render(bullet), formatPackageVersion(v.Package, v.InstalledVersion))
 		fmt.Printf("    %s %s\n", formatLabel("Severity"), formatSeverity(v.Severity))
 		fmt.Printf("    %s %s\n", formatLabel("ID"), v.ID)
@@ -339,9 +344,17 @@ func runCheck(scan scanner.Scanner, pkg, version string) {
 
 	if outputJSON {
 		printJSON(result)
-		return
+	} else {
+		printCheckResult(result, pkg, version)
 	}
 
+	// Exit with code 2 if vulnerabilities or supply chain issues found
+	if findings.HasCheckFindings(result) {
+		exitFunc(2)
+	}
+}
+
+func printCheckResult(result *types.CheckResult, pkg, version string) {
 	// Styled output
 	fmt.Println(formatHeader("Package Check"))
 	fmt.Println(formatDivider(40))

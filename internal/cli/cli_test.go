@@ -502,6 +502,8 @@ func TestRunCheck_JSON(t *testing.T) {
 
 func TestRunCheck_Styled(t *testing.T) {
 	resetOutputJSON()
+	restore, exitCode := mockExit(t)
+	defer restore()
 
 	mock := &mockScanner{
 		checkResult: &types.CheckResult{
@@ -515,6 +517,10 @@ func TestRunCheck_Styled(t *testing.T) {
 	output := captureOutput(func() {
 		runCheck(mock, "lodash", "4.17.21")
 	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0", *exitCode)
+	}
 
 	// Should contain styled elements
 	expectedPhrases := []string{
@@ -1465,6 +1471,8 @@ func TestPrintScanResult_Lockfiles(t *testing.T) {
 
 func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 	resetOutputJSON()
+	restore, exitCode := mockExit(t)
+	defer restore()
 
 	mock := &mockScanner{
 		checkResult: &types.CheckResult{
@@ -1484,6 +1492,10 @@ func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 	output := captureOutput(func() {
 		runCheck(mock, "lodash", "4.17.15")
 	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (vulnerabilities found)", *exitCode)
+	}
 
 	// Should show header
 	if !strings.Contains(output, "Package Check") {
@@ -1508,6 +1520,8 @@ func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 
 func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 	resetOutputJSON()
+	restore, exitCode := mockExit(t)
+	defer restore()
 
 	mock := &mockScanner{
 		checkResult: &types.CheckResult{
@@ -1521,6 +1535,10 @@ func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 	output := captureOutput(func() {
 		runCheck(mock, "lodash", "4.17.21")
 	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0 (clean package)", *exitCode)
+	}
 
 	// Should show success for supply chain
 	if !strings.Contains(output, "No supply chain issues") {
@@ -1605,6 +1623,8 @@ func TestRunRefresh_Styled_Force(t *testing.T) {
 
 func TestRunScan_Styled(t *testing.T) {
 	resetOutputJSON()
+	restore, exitCode := mockExit(t)
+	defer restore()
 
 	mock := &mockScanner{
 		scanResult: &types.ScanResult{
@@ -1630,6 +1650,10 @@ func TestRunScan_Styled(t *testing.T) {
 		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
 	})
 
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0 (no findings)", *exitCode)
+	}
+
 	// Should show header
 	if !strings.Contains(output, "Scan Results") {
 		t.Error("Expected 'Scan Results' header")
@@ -1652,5 +1676,346 @@ func TestRunScan_Styled(t *testing.T) {
 	}
 	if !strings.Contains(output, "package-lock.json") {
 		t.Error("Expected lockfile path in output")
+	}
+}
+
+// =============================================================================
+// Exit Code Tests (Exit Code 2 for Findings)
+// =============================================================================
+
+func TestRunScan_ExitCode0_NoFindings(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0 (no findings)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.ScanResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunScan_ExitCode2_WithVulnerabilities(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues: types.IssueCounts{
+					High: 1,
+				},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{
+					{
+						Package:          "lodash",
+						InstalledVersion: "4.17.15",
+						Severity:         "high",
+						ID:               "GHSA-xxxx-xxxx-xxxx",
+						Title:            "Prototype Pollution",
+						PatchedIn:        "4.17.21",
+					},
+				},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (vulnerabilities found)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.ScanResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunScan_ExitCode2_WithSupplyChainFindings(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues: types.IssueCounts{
+					SupplyChain: 1,
+				},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{
+					{
+						Package:          "malicious-pkg",
+						InstalledVersion: "1.0.0",
+						Severity:         "critical",
+						Type:             "compromised",
+						Campaigns:        []string{"shai-hulud"},
+					},
+				},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (supply chain findings)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.ScanResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunScan_ExitCode2_WithBothFindings(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 10,
+				Issues: types.IssueCounts{
+					High:        1,
+					SupplyChain: 1,
+				},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{
+					{
+						Package:          "malicious-pkg",
+						InstalledVersion: "1.0.0",
+						Severity:         "critical",
+						Type:             "compromised",
+					},
+				},
+				Warnings: []types.SupplyChainWarning{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{
+					{
+						Package:          "lodash",
+						InstalledVersion: "4.17.15",
+						Severity:         "high",
+						ID:               "GHSA-xxxx-xxxx-xxxx",
+						Title:            "Prototype Pollution",
+					},
+				},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 10},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runScan(mock, "/tmp/test", scanOptions{Recursive: false, IncludeDev: true})
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (both supply chain and vulnerabilities)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.ScanResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunCheck_ExitCode0_NoFindings(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+	}
+
+	output := captureOutput(func() {
+		runCheck(mock, "lodash", "4.17.21")
+	})
+
+	if *exitCode != 0 {
+		t.Errorf("Exit code = %d, want 0 (no findings)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.CheckResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunCheck_ExitCode2_WithVulnerabilities(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{
+				{
+					ID:       "GHSA-xxxx-xxxx-xxxx",
+					Title:    "Prototype Pollution",
+					Severity: "high",
+				},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runCheck(mock, "lodash", "4.17.15")
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (vulnerabilities found)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.CheckResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunCheck_ExitCode2_WithSupplyChainCompromise(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: true,
+				Campaigns:   []string{"shai-hulud"},
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+	}
+
+	output := captureOutput(func() {
+		runCheck(mock, "malicious-pkg", "1.0.0")
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (supply chain compromise)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.CheckResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
+	}
+}
+
+func TestRunCheck_ExitCode2_WithBothFindings(t *testing.T) {
+	resetOutputJSON()
+	outputJSON = true
+	restore, exitCode := mockExit(t)
+	defer restore()
+
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: true,
+				Campaigns:   []string{"shai-hulud"},
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{
+				{
+					ID:       "GHSA-xxxx-xxxx-xxxx",
+					Title:    "Prototype Pollution",
+					Severity: "high",
+				},
+			},
+		},
+	}
+
+	output := captureOutput(func() {
+		runCheck(mock, "malicious-pkg", "1.0.0")
+	})
+
+	if *exitCode != 2 {
+		t.Errorf("Exit code = %d, want 2 (both supply chain and vulnerabilities)", *exitCode)
+	}
+
+	// Verify output is valid JSON
+	var result types.CheckResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Errorf("Output is not valid JSON: %v", err)
 	}
 }

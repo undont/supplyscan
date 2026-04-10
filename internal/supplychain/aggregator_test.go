@@ -49,6 +49,7 @@ func TestNewAggregator(t *testing.T) {
 
 	if agg == nil {
 		t.Fatal("NewAggregator() returned nil")
+		return
 	}
 
 	if len(agg.sources) != 2 {
@@ -105,6 +106,7 @@ func TestAggregator_EnsureLoaded_Success(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("GetDatabase() returned nil after EnsureLoaded")
+		return
 	}
 
 	if len(db.Packages) != 1 {
@@ -158,6 +160,7 @@ func TestAggregator_EnsureLoaded_MultipleSources(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("GetDatabase() returned nil")
+		return
 	}
 
 	// Should have 3 packages (pkg-a, pkg-b, pkg-shared merged)
@@ -217,6 +220,7 @@ func TestAggregator_EnsureLoaded_PartialFailure(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("GetDatabase() returned nil, expected data from working source")
+		return
 	}
 
 	if len(db.Packages) != 1 {
@@ -450,6 +454,7 @@ func TestAggregator_StaleWhileRevalidate(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("getDatabase() returned nil during stale-while-revalidate")
+		return
 	}
 	if len(db.Packages) != 1 {
 		t.Errorf("expected 1 package, got %d", len(db.Packages))
@@ -502,6 +507,7 @@ func TestAggregator_ColdStartBlocks(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("getDatabase() returned nil after cold start")
+		return
 	}
 	if len(db.Packages) != 1 {
 		t.Errorf("expected 1 package, got %d", len(db.Packages))
@@ -614,6 +620,7 @@ func TestAggregator_ConcurrentColdStart(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("getDatabase() returned nil after concurrent cold start")
+		return
 	}
 }
 
@@ -662,6 +669,7 @@ func TestAggregator_DiskCacheOnColdStart(t *testing.T) {
 	db := agg2.getDatabase()
 	if db == nil {
 		t.Fatal("getDatabase() returned nil — expected disk cache to be loaded")
+		return
 	}
 	if _, ok := db.Packages["cached-pkg"]; !ok {
 		t.Error("expected 'cached-pkg' from disk cache, not found")
@@ -721,6 +729,7 @@ func TestAggregator_StaleDataSurvivesFailedRefresh(t *testing.T) {
 	db := agg.getDatabase()
 	if db == nil {
 		t.Fatal("getDatabase() returned nil — stale data should survive failed refresh")
+		return
 	}
 	if _, ok := db.Packages["original-pkg"]; !ok {
 		t.Error("expected 'original-pkg' to survive failed background refresh")

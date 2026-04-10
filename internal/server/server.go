@@ -3,14 +3,29 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/seanhalberthal/supplyscan/internal/findings"
 	"github.com/seanhalberthal/supplyscan/internal/scanner"
 	"github.com/seanhalberthal/supplyscan/internal/types"
 )
+
+// FindingsError is returned when scan or check operations complete successfully
+// but find vulnerabilities or supply chain compromises. It wraps the result
+// with finding information so MCP clients can differentiate findings from errors.
+type FindingsError struct {
+	Result interface{} `json:"result"`
+	Code   string      `json:"code"`
+}
+
+func (e *FindingsError) Error() string {
+	data, _ := json.Marshal(e)
+	return string(data)
+}
 
 // scan holds the scanner instance for tool handlers.
 var scan scanner.Scanner
@@ -125,7 +140,17 @@ func handleScan(_ context.Context, _ *mcp.CallToolRequest, input scanInput) (*mc
 		return nil, scanOutput{}, err
 	}
 
-	return nil, scanOutput{ScanResult: *result}, nil
+	output := scanOutput{ScanResult: *result}
+
+	// Return FindingsError if vulnerabilities or supply chain issues were found
+	if findings.HasScanFindings(result) {
+		return nil, output, &FindingsError{
+			Result: output,
+			Code:   "FINDINGS_DETECTED",
+		}
+	}
+
+	return nil, output, nil
 }
 
 func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*mcp.CallToolResult, checkOutput, error) {
@@ -141,7 +166,17 @@ func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*
 		return nil, checkOutput{}, err
 	}
 
-	return nil, checkOutput{CheckResult: *result}, nil
+	output := checkOutput{CheckResult: *result}
+
+	// Return FindingsError if vulnerabilities or supply chain compromises were found
+	if findings.HasCheckFindings(result) {
+		return nil, output, &FindingsError{
+			Result: output,
+			Code:   "FINDINGS_DETECTED",
+		}
+	}
+
+	return nil, output, nil
 }
 
 func handleRefresh(_ context.Context, _ *mcp.CallToolRequest, input refreshInput) (*mcp.CallToolResult, refreshOutput, error) {

@@ -57,3 +57,4 @@ vendor/
 
 # Code review
 CODE_REVIEW.md
+/.opencode

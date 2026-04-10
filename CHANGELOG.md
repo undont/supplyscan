@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- CLI and MCP server now return exit code 2 / FindingsError when vulnerabilities or supply chain issues are found
+
+## [1.9.1](https://github.com/seanhalberthal/supplyscan/compare/v1.9.0...v1.9.1)
+
+- Fix spinner style consistency across scan, check, and refresh operations
+- Replace briandowns/spinner with charmbracelet/huh spinner
+
+## [1.9.0](https://github.com/seanhalberthal/supplyscan/compare/v1.8.2...v1.9.0)
+
 - Fix version display showing garbled string due to broken sed in release workflow
 - Strip `v` prefix from version output (e.g. `1.8.2` instead of `v1.8.2`)
 - Add per-phase timing to scan, check, and refresh operations

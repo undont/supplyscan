@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -447,4 +448,255 @@ func TestOutputTypes(t *testing.T) {
 	if !ro.Updated || ro.PackagesCount != 100 {
 		t.Error("refreshOutput fields not set correctly")
 	}
+}
+
+// =============================================================================
+// Findings Error Tests
+// =============================================================================
+
+func TestFindingsError_Error(t *testing.T) {
+	fe := &FindingsError{
+		Result: "test result",
+		Code:   "FINDINGS_DETECTED",
+	}
+
+	// Error() should return valid JSON string
+	errStr := fe.Error()
+	if errStr == "" {
+		t.Error("FindingsError.Error() returned empty string")
+	}
+
+	// Should contain code
+	if !contains(errStr, "FINDINGS_DETECTED") {
+		t.Errorf("FindingsError.Error() should contain code, got: %s", errStr)
+	}
+}
+
+func TestHandleScan_FindingsError_WithVulnerabilities(t *testing.T) {
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues: types.IssueCounts{
+					High: 1,
+				},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{
+					{
+						Package:          "lodash",
+						InstalledVersion: "4.17.15",
+						Severity:         "high",
+						ID:               "GHSA-xxxx-xxxx-xxxx",
+						Title:            "Prototype Pollution",
+					},
+				},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, output, err := handleScan(context.Background(), nil, scanInput{Path: "/tmp/test"})
+
+	if err == nil {
+		t.Error("handleScan() should return error when vulnerabilities found")
+	}
+
+	// Should be a FindingsError
+	var fe *FindingsError
+	if !errors.As(err, &fe) {
+		t.Errorf("handleScan() error type = %T, want *FindingsError", err)
+	}
+
+	if fe != nil && fe.Code != "FINDINGS_DETECTED" {
+		t.Errorf("FindingsError.Code = %q, want FINDINGS_DETECTED", fe.Code)
+	}
+
+	// Output should still contain the result
+	if output.Summary.LockfilesScanned != 1 {
+		t.Error("Output should still contain scan results")
+	}
+}
+
+func TestHandleScan_FindingsError_WithSupplyChainFindings(t *testing.T) {
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues: types.IssueCounts{
+					SupplyChain: 1,
+				},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{
+					{
+						Package:          "malicious-pkg",
+						InstalledVersion: "1.0.0",
+						Severity:         "critical",
+						Type:             "compromised",
+					},
+				},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, output, err := handleScan(context.Background(), nil, scanInput{Path: "/tmp/test"})
+
+	if err == nil {
+		t.Error("handleScan() should return error when supply chain findings detected")
+	}
+
+	var fe *FindingsError
+	if !errors.As(err, &fe) {
+		t.Errorf("handleScan() error type = %T, want *FindingsError", err)
+	}
+
+	if fe != nil && fe.Code != "FINDINGS_DETECTED" {
+		t.Errorf("FindingsError.Code = %q, want FINDINGS_DETECTED", fe.Code)
+	}
+
+	if output.Summary.LockfilesScanned != 1 {
+		t.Error("Output should still contain scan results")
+	}
+}
+
+func TestHandleScan_NoError_NoFindings(t *testing.T) {
+	mock := &mockScanner{
+		scanResult: &types.ScanResult{
+			Summary: types.ScanSummary{
+				LockfilesScanned:  1,
+				TotalDependencies: 5,
+				Issues:            types.IssueCounts{},
+			},
+			SupplyChain: types.SupplyChainResult{
+				Findings: []types.SupplyChainFinding{},
+			},
+			Vulnerabilities: types.VulnerabilityResult{
+				Findings: []types.VulnerabilityFinding{},
+			},
+			Lockfiles: []types.LockfileInfo{
+				{Path: "package-lock.json", Type: "npm", Dependencies: 5},
+			},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, _, err := handleScan(context.Background(), nil, scanInput{Path: "/tmp/test"})
+
+	if err != nil {
+		t.Errorf("handleScan() should not return error when no findings, got: %v", err)
+	}
+}
+
+func TestHandleCheck_FindingsError_WithVulnerabilities(t *testing.T) {
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{
+				{
+					ID:       "GHSA-xxxx-xxxx-xxxx",
+					Title:    "Prototype Pollution",
+					Severity: "high",
+				},
+			},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, output, err := handleCheck(context.Background(), nil, checkInput{Package: "lodash", Version: "4.17.15"})
+
+	if err == nil {
+		t.Error("handleCheck() should return error when vulnerabilities found")
+	}
+
+	var fe *FindingsError
+	if !errors.As(err, &fe) {
+		t.Errorf("handleCheck() error type = %T, want *FindingsError", err)
+	}
+
+	if fe != nil && fe.Code != "FINDINGS_DETECTED" {
+		t.Errorf("FindingsError.Code = %q, want FINDINGS_DETECTED", fe.Code)
+	}
+
+	// Output should still contain the result
+	if len(output.Vulnerabilities) != 1 {
+		t.Error("Output should still contain check results")
+	}
+}
+
+func TestHandleCheck_FindingsError_WithSupplyChainCompromise(t *testing.T) {
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: true,
+				Campaigns:   []string{"shai-hulud"},
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, output, err := handleCheck(context.Background(), nil, checkInput{Package: "malicious-pkg", Version: "1.0.0"})
+
+	if err == nil {
+		t.Error("handleCheck() should return error when supply chain compromise detected")
+	}
+
+	var fe *FindingsError
+	if !errors.As(err, &fe) {
+		t.Errorf("handleCheck() error type = %T, want *FindingsError", err)
+	}
+
+	if fe != nil && fe.Code != "FINDINGS_DETECTED" {
+		t.Errorf("FindingsError.Code = %q, want FINDINGS_DETECTED", fe.Code)
+	}
+
+	if !output.SupplyChain.Compromised {
+		t.Error("Output should still contain check results with compromise info")
+	}
+}
+
+func TestHandleCheck_NoError_NoFindings(t *testing.T) {
+	mock := &mockScanner{
+		checkResult: &types.CheckResult{
+			SupplyChain: types.CheckSupplyChainResult{
+				Compromised: false,
+			},
+			Vulnerabilities: []types.VulnerabilityInfo{},
+		},
+	}
+	setupMockScanner(mock)
+
+	_, _, err := handleCheck(context.Background(), nil, checkInput{Package: "lodash", Version: "4.17.21"})
+
+	if err != nil {
+		t.Errorf("handleCheck() should not return error when no findings, got: %v", err)
+	}
+}
+
+// Helper function for string containment in tests
+func contains(s, substr string) bool {
+	for i := 0; i < len(s)-len(substr)+1; i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
