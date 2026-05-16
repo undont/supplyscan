@@ -1,0 +1,23 @@
+{
+  "name": "acme-dashboard",
+  "version": "1.4.0",
+  "description": "Internal analytics dashboard",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "build": "webpack",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@asyncapi/react-component": "2.6.7",
+    "@crowdstrike/commitlint": "8.1.1",
+    "@ctrl/deluge": "7.2.2",
+    "@ensdomains/ensjs": "3.0.0",
+    "@nx/devkit": "21.5.0",
+    "@posthog/node": "3.1.0",
+    "axios": "1.6.0",
+    "express": "4.17.1",
+    "lodash": "4.17.20",
+    "react": "18.2.0"
+  }
+}

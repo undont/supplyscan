@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - CLI and MCP server now return exit code 2 / FindingsError when vulnerabilities or supply chain issues are found
+- Bump dependencies (notably `modelcontextprotocol/go-sdk` 1.3.1 → 1.6.0)
+- Add demo gif to README
 
 ## [1.9.1](https://github.com/seanhalberthal/supplyscan/compare/v1.9.0...v1.9.1)
 

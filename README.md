@@ -16,6 +16,8 @@
 
 [Quick Start](#quick-start) · [Installation](#installation) · [CLI Usage](#cli-usage) · [MCP Server](#mcp-server-integration) · [Data Sources](#data-sources)
 
+![supplyscan demo](.demo/demo.gif)
+
 </div>
 
 ---
