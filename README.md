@@ -2,7 +2,7 @@
 
 # supplyscan
 
-**Security scanner for JavaScript lockfiles — detects supply chain compromises and known vulnerabilities.**
+**Scans JavaScript lockfiles for supply-chain compromises and known vulnerabilities.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
 [![Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/seanhalberthal/supplyscan/releases/latest)
@@ -35,12 +35,12 @@ supplyscan check lodash 4.17.20      # check a specific package
 
 ## Features
 
-- **Supply chain detection** — aggregates IOCs from DataDog, GitHub Advisory Database, and OSV.dev
-- **Vulnerability scanning** — integrates with npm audit API for known CVEs
-- **Multi-format lockfiles** — npm, Yarn (classic & berry), pnpm, Bun, and Deno
-- **Dual interface** — standalone CLI with styled output, or MCP server for AI agents
-- **CI/CD friendly** — JSON output mode for scripting and automation
-- **Per-source caching** — each IOC source cached independently with configurable TTL
+- **Supply-chain detection** by aggregating IOCs from DataDog, GitHub Advisory Database, and OSV.dev
+- **Vulnerability scanning** through the npm audit API for known CVEs
+- **Multi-format lockfile support** across npm, Yarn (classic & berry), pnpm, Bun, and Deno
+- **CLI and MCP modes** in a single binary, switchable with `--mcp`
+- **JSON output** for scripting and CI use
+- **Per-source caching** with a configurable TTL, so each IOC source refreshes on its own schedule
 
 ### Supported Lockfiles
 
@@ -53,7 +53,7 @@ supplyscan check lodash 4.17.20      # check a specific package
 | Bun | `bun.lock` |
 | Deno | `deno.lock` |
 
-Built in Go rather than as an npm package, making it immune to npm supply chain attacks by design.
+Written in Go and shipped as a static binary, so the scanner itself can't be compromised by the npm ecosystem it scans.
 
 ---
 
@@ -110,7 +110,7 @@ mv supplyscan /usr/local/bin/
 
 ## CLI Usage
 
-The CLI is the default mode — no flags required.
+The CLI is the default mode; no flags required.
 
 ```bash
 # Scan current directory
@@ -227,13 +227,13 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 
 ### IOC Sources (Aggregated)
 
-- **DataDog IOC Database** — [Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise) — Shai-Hulud campaign packages
-- **GitHub Advisory Database** — [Security Advisories](https://github.com/advisories) — npm malware advisories (GHSA)
-- **OSV.dev** — [Open Source Vulnerabilities](https://osv.dev) — npm malware entries from the MAL ecosystem
+- **[DataDog Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise)** for Shai-Hulud campaign packages
+- **[GitHub Advisory Database](https://github.com/advisories)** for npm malware advisories (GHSA)
+- **[OSV.dev](https://osv.dev)** for npm malware entries from the MAL ecosystem
 
 ### Vulnerability Data
 
-- **npm Audit API** — [Registry audit endpoint](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities) — known CVEs
+- **[npm audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)** for known CVEs
 
 ---
 
