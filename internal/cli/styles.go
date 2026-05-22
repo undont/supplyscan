@@ -36,12 +36,14 @@ var (
 	checkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // Green checkmark
 	crossStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red cross
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // Cyan spinner
+	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // Blue info marker (informational, not alarming)
 )
 
 // Symbols for output.
 const (
 	checkMark = "✓"
 	crossMark = "✗"
+	infoMark  = "i"
 	bullet    = "•"
 	arrow     = "→"
 )

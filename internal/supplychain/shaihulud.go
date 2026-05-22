@@ -50,6 +50,7 @@ func NewDetector(opts ...DetectorOption) (*Detector, error) {
 	if len(iocSources) == 0 {
 		iocSources = []IOCSource{
 			sources.NewDataDogSource(),
+			sources.NewDataDogTeamPCPSource(),
 			sources.NewGitHubAdvisorySource(),
 			sources.NewOSVSource(),
 		}
@@ -129,7 +130,8 @@ func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding 
 
 // checkNamespace checks if a package is from an at-risk namespace.
 func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarning {
-	if !isAtRiskNamespace(name) {
+	campaign, ok := lookupNamespaceCampaign(name)
+	if !ok {
 		return nil
 	}
 
@@ -150,6 +152,9 @@ func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarnin
 		Type:             "namespace_at_risk",
 		Package:          name,
 		InstalledVersion: version,
+		Namespace:        packageScope(name),
+		Campaign:         campaign.Name,
+		CampaignWhen:     campaign.When,
 		Note:             getNamespaceWarning(name),
 	}
 }

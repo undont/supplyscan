@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -232,33 +233,30 @@ func mergeOSVVulnerability(packages map[string]types.SourcePackage, vuln *osvVul
 
 // extractOSVVersions extracts version info from an OSV affected entry.
 func extractOSVVersions(affected *osvAffected) []string {
-	// If explicit versions are listed, use them
 	if len(affected.Versions) > 0 {
 		return affected.Versions
 	}
+	// For malware, an "introduced: 0" event with no corresponding fix means
+	// every version is malicious.
+	if slices.ContainsFunc(affected.Ranges, rangeCoversAllVersions) {
+		return []string{">= 0"}
+	}
+	return nil
+}
 
-	// Otherwise, check ranges. For malware, "introduced: 0" with no fix
-	// means all versions are malicious.
-	for _, r := range affected.Ranges {
-		for _, event := range r.Events {
-			if event.Introduced == "0" {
-				// Check if there's a corresponding fix
-				hasFix := false
-				for _, e := range r.Events {
-					if e.Fixed != "" {
-						hasFix = true
-						break
-					}
-				}
-				if !hasFix {
-					// All versions affected
-					return []string{">= 0"}
-				}
-			}
+// rangeCoversAllVersions reports whether a range has an "introduced: 0" event
+// without any matching "fixed" event.
+func rangeCoversAllVersions(r osvRange) bool {
+	introducedAtZero, hasFix := false, false
+	for _, e := range r.Events {
+		if e.Introduced == "0" {
+			introducedAtZero = true
+		}
+		if e.Fixed != "" {
+			hasFix = true
 		}
 	}
-
-	return nil
+	return introducedAtZero && !hasFix
 }
 
 // mergeOSVVersions merges two version lists, deduplicating.

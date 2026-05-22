@@ -290,11 +290,49 @@ func printSupplyChainWarnings(warnings []types.SupplyChainWarning) {
 		return
 	}
 
-	fmt.Println(formatSection("Warnings"))
+	// Group by namespace so 8 entries for @tanstack don't read like 8
+	// independent problems. These are informational notes, not findings —
+	// the wording and styling reflect that.
+	type group struct {
+		scope        string
+		campaign     string
+		campaignWhen string
+		packages     []string
+	}
+	order := []string{}
+	groups := map[string]*group{}
 	for i := range warnings {
 		w := &warnings[i]
-		fmt.Printf("  %s %s\n", warnStyle.Render("!"), formatPackageVersion(w.Package, w.InstalledVersion))
-		fmt.Printf("    %s\n", formatMuted(w.Note))
+		scope := w.Namespace
+		if scope == "" {
+			scope = w.Package // fallback for older callers
+		}
+		g, ok := groups[scope]
+		if !ok {
+			g = &group{scope: scope, campaign: w.Campaign, campaignWhen: w.CampaignWhen}
+			groups[scope] = g
+			order = append(order, scope)
+		}
+		g.packages = append(g.packages, fmt.Sprintf("%s@%s", w.Package, w.InstalledVersion))
+	}
+
+	fmt.Println(formatSection("Heads up — at-risk namespaces"))
+	fmt.Printf("  %s\n", formatMuted("Informational only. Your installed versions are not on any IOC list."))
+	fmt.Println()
+	for _, scope := range order {
+		g := groups[scope]
+		header := formatPackage(g.scope)
+		if g.campaign != "" {
+			detail := g.campaign
+			if g.campaignWhen != "" {
+				detail += ", " + g.campaignWhen
+			}
+			header += " " + formatMuted("— past compromise: "+detail)
+		}
+		fmt.Printf("  %s %s\n", infoStyle.Render(infoMark), header)
+		for _, pv := range g.packages {
+			fmt.Printf("      %s %s\n", formatMuted(bullet), formatMuted(pv))
+		}
 	}
 	fmt.Println()
 }

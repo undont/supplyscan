@@ -66,7 +66,18 @@ func (s *DataDogSource) CacheTTL() time.Duration {
 
 // Fetch retrieves IOC data from the DataDog source.
 func (s *DataDogSource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, http.NoBody)
+	return fetchCSVSource(ctx, client, s.url, s.Name(), dataDogCampaign, parseDataDogCSV)
+}
+
+// fetchCSVSource is a shared helper that downloads a CSV IOC feed and decodes
+// it via the supplied parser. Both DataDog sources share this transport logic.
+func fetchCSVSource(
+	ctx context.Context,
+	client *http.Client,
+	url, sourceName, campaign string,
+	parse func(io.Reader) (map[string]types.SourcePackage, error),
+) (*types.SourceData, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -81,14 +92,14 @@ func (s *DataDogSource) Fetch(ctx context.Context, client *http.Client) (*types.
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	packages, err := parseDataDogCSV(resp.Body)
+	packages, err := parse(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse CSV: %w", err)
 	}
 
 	return &types.SourceData{
-		Source:    s.Name(),
-		Campaign:  dataDogCampaign,
+		Source:    sourceName,
+		Campaign:  campaign,
 		Packages:  packages,
 		FetchedAt: time.Now().UTC().Format(time.RFC3339),
 	}, nil
@@ -164,7 +175,7 @@ func parseCSVRecord(record []string, cols csvColumns) *types.SourcePackage {
 // splitAndTrim splits a comma-separated string and trims whitespace.
 func splitAndTrim(s string) []string {
 	var result []string
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			result = append(result, part)

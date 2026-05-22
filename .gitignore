@@ -21,15 +21,15 @@ go.work.sum
 .env
 
 # IDE/Editor
-.idea/
-.vscode/
+.sonarlint/
 *.swp
 *.swo
 *~
 
-# Claude Code
+# AI tools
 .claude/
 CLAUDE.md
+/.opencode
 
 # macOS
 .DS_Store
@@ -56,5 +56,4 @@ tmp/
 vendor/
 
 # Code review
-/.opencode
 /.plans

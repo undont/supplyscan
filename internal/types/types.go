@@ -73,10 +73,15 @@ type SupplyChainFinding struct {
 }
 
 // SupplyChainWarning represents a package from an at-risk namespace.
+// It is informational only — the installed version is not on any IOC list,
+// but the namespace has been targeted by a past supply-chain campaign.
 type SupplyChainWarning struct {
 	Type             string `json:"type"`
 	Package          string `json:"package"`
 	InstalledVersion string `json:"installed_version"`
+	Namespace        string `json:"namespace,omitempty"`     // e.g. "@tanstack"
+	Campaign         string `json:"campaign,omitempty"`      // e.g. "TeamPCP / Mini Shai-Hulud"
+	CampaignWhen     string `json:"campaign_when,omitempty"` // e.g. "Apr–May 2026"
 	Note             string `json:"note"`
 }
 

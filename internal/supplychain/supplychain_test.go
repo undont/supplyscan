@@ -147,8 +147,16 @@ func TestGetNamespaceWarning(t *testing.T) {
 	if warning == "" {
 		t.Error("GetNamespaceWarning() returned empty string")
 	}
-	if !strings.Contains(warning, "supply chain attack") {
-		t.Error("Warning should mention supply chain attack")
+	// Wording should lead with the reassurance and name the campaign so users
+	// know which past incident the scope is associated with.
+	if !strings.Contains(warning, "not on any IOC list") {
+		t.Errorf("Warning should reassure that the version isn't on an IOC list, got: %q", warning)
+	}
+	if !strings.Contains(warning, "Shai-Hulud") {
+		t.Errorf("Warning should name the campaign (Shai-Hulud for @ctrl), got: %q", warning)
+	}
+	if !strings.Contains(warning, "@ctrl") {
+		t.Errorf("Warning should name the scope (@ctrl), got: %q", warning)
 	}
 }
 
@@ -334,11 +342,15 @@ func TestDetector_GetStatus(t *testing.T) {
 }
 
 func TestAtRiskNamespaces_Coverage(t *testing.T) {
-	// Verify all defined namespaces are actually checked
-	for _, ns := range atRiskNamespaces {
-		testPkg := ns + "/test-package"
+	// Verify all defined namespaces are actually checked and that each entry
+	// has campaign metadata populated.
+	for scope, campaign := range atRiskNamespaces {
+		testPkg := scope + "/test-package"
 		if !isAtRiskNamespace(testPkg) {
-			t.Errorf("IsAtRiskNamespace(%q) = false, namespace %q should be at-risk", testPkg, ns)
+			t.Errorf("isAtRiskNamespace(%q) = false, scope %q should be at-risk", testPkg, scope)
+		}
+		if campaign.Name == "" || campaign.When == "" {
+			t.Errorf("scope %q has incomplete campaign metadata: %+v", scope, campaign)
 		}
 	}
 }

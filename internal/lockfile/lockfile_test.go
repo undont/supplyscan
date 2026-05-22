@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -290,6 +291,18 @@ func TestDetectAndParse_Bun(t *testing.T) {
 	}
 	if _, ok := depMap["express"]; !ok {
 		t.Errorf("Expected express in dependencies")
+	}
+
+	// Regression: positions 1–3 of each bun.lock entry (registry, metadata,
+	// integrity hash) must not be treated as additional versions. If they
+	// were, we'd see a duplicate dep with a sha512-prefixed "version".
+	for _, dep := range deps {
+		if strings.HasPrefix(dep.Version, "sha512-") || strings.HasPrefix(dep.Version, "sha256-") {
+			t.Errorf("dependency %q has an integrity hash as its version: %q", dep.Name, dep.Version)
+		}
+	}
+	if got, want := len(deps), 4; got != want {
+		t.Errorf("len(deps) = %d, want %d (one entry per package — no integrity-hash duplicates)", got, want)
 	}
 }
 

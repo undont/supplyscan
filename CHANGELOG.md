@@ -2,21 +2,39 @@
 
 ## [Unreleased]
 
-- CLI and MCP server now return exit code 2 / FindingsError when vulnerabilities or supply chain issues are found
+- Add DataDog TeamPCP (Mini Shai-Hulud) IOC source for the self-spreading npm worm targeting SAP CAP, TanStack, AntV, and related scopes
+- Add at-risk namespace warnings for `@cap-js`, `@tanstack`, `@antv`, `@lint-md`, `@openclaw-cn`, and `@starmind`
+- Fix bun lockfile parser treating each entry's integrity hash as a duplicate package version (scans of bun projects were double-counting dependencies)
+- Group at-risk namespace notices by scope, name the campaign that put the scope on the list, and lead with "your installed version is not on any IOC list" so the section reads as informational rather than alarming
+
+## [1.11.0](https://github.com/seanhalberthal/supplyscan/compare/v1.10.1...v1.11.0)
+
 - Bump dependencies (notably `modelcontextprotocol/go-sdk` 1.3.1 → 1.6.0)
 - Add demo gif to README
+
+## [1.10.1](https://github.com/seanhalberthal/supplyscan/compare/v1.10.0...v1.10.1)
+
+- Fix release workflow to use `inputs.tag` instead of `GITHUB_REF` for `workflow_dispatch` version
+
+## [1.10.0](https://github.com/seanhalberthal/supplyscan/compare/v1.9.1...v1.10.0)
+
+- Extract findings detection into shared package; CLI and MCP server now return exit code 2 / `FindingsError` when vulnerabilities or supply chain issues are found
+- Remove ASCII art logo from README
 
 ## [1.9.1](https://github.com/seanhalberthal/supplyscan/compare/v1.9.0...v1.9.1)
 
 - Fix spinner style consistency across scan, check, and refresh operations
 - Replace briandowns/spinner with charmbracelet/huh spinner
 
-## [1.9.0](https://github.com/seanhalberthal/supplyscan/compare/v1.8.2...v1.9.0)
+## [1.9.0](https://github.com/seanhalberthal/supplyscan/compare/v1.8.3...v1.9.0)
+
+- Add per-phase timing to scan, check, and refresh operations
+- Add stale-while-revalidate for IOC database loading (instant responses when data is cached)
+
+## [1.8.3](https://github.com/seanhalberthal/supplyscan/compare/v1.8.2...v1.8.3)
 
 - Fix version display showing garbled string due to broken sed in release workflow
 - Strip `v` prefix from version output (e.g. `1.8.2` instead of `v1.8.2`)
-- Add per-phase timing to scan, check, and refresh operations
-- Add stale-while-revalidate for IOC database loading (instant responses when data is cached)
 
 ## [1.8.2](https://github.com/seanhalberthal/supplyscan/compare/v1.8.1...v1.8.2)
 

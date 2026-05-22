@@ -35,7 +35,7 @@ supplyscan check lodash 4.17.20      # check a specific package
 
 ## Features
 
-- **Supply-chain detection** by aggregating IOCs from DataDog, GitHub Advisory Database, and OSV.dev
+- **Supply-chain detection** by aggregating IOCs from DataDog (Shai-Hulud v2 and TeamPCP / Mini Shai-Hulud), GitHub Advisory Database, and OSV.dev
 - **Vulnerability scanning** through the npm audit API for known CVEs
 - **Multi-format lockfile support** across npm, Yarn (classic & berry), pnpm, Bun, and Deno
 - **CLI and MCP modes** in a single binary, switchable with `--mcp`
@@ -227,7 +227,8 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 
 ### IOC Sources (Aggregated)
 
-- **[DataDog Indicators of Compromise](https://github.com/DataDog/indicators-of-compromise)** for Shai-Hulud campaign packages
+- **[DataDog Indicators of Compromise — Shai-Hulud v2](https://github.com/DataDog/indicators-of-compromise/tree/main/shai-hulud-2.0)** for the original Shai-Hulud worm packages
+- **[DataDog Indicators of Compromise — TeamPCP](https://github.com/DataDog/indicators-of-compromise/tree/main/teampcp)** for the Mini Shai-Hulud / TeamPCP campaign (npm rows only)
 - **[GitHub Advisory Database](https://github.com/advisories)** for npm malware advisories (GHSA)
 - **[OSV.dev](https://osv.dev)** for npm malware entries from the MAL ecosystem
 

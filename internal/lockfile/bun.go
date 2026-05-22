@@ -29,6 +29,14 @@ func (l *bunLockfile) Dependencies() []types.Dependency {
 
 // bunLockfileJSON represents the structure of bun.lock.
 // The format is JSONC (JSON with comments).
+//
+// Each entry in `packages` is a positional array:
+//
+//	[ "name@version", "registry", { metadata }, "sha512-..." ]
+//
+// Only position 0 (the resolution string) carries the version. The other
+// slots are registry URL, peer-dep metadata, and the integrity hash —
+// none of which should be treated as additional versions.
 type bunLockfileJSON struct {
 	LockfileVersion int                          `json:"lockfileVersion"`
 	Packages        map[string][]json.RawMessage `json:"packages"`
@@ -57,25 +65,25 @@ func parseBun(path string) (Lockfile, error) {
 		if key == "" || strings.HasPrefix(key, "workspace:") {
 			continue
 		}
-
-		// Parse each entry in the array
-		for _, entry := range entries {
-			name, version := parseBunEntry(key, entry)
-			if name == "" || version == "" {
-				continue
-			}
-
-			dedupKey := name + "@" + version
-			if seen[dedupKey] {
-				continue
-			}
-			seen[dedupKey] = true
-
-			deps = append(deps, types.Dependency{
-				Name:    name,
-				Version: version,
-			})
+		if len(entries) == 0 {
+			continue
 		}
+
+		name, version := parseBunResolution(key, entries[0])
+		if name == "" || version == "" {
+			continue
+		}
+
+		dedupKey := name + "@" + version
+		if seen[dedupKey] {
+			continue
+		}
+		seen[dedupKey] = true
+
+		deps = append(deps, types.Dependency{
+			Name:    name,
+			Version: version,
+		})
 	}
 
 	return &bunLockfile{
@@ -84,30 +92,15 @@ func parseBun(path string) (Lockfile, error) {
 	}, nil
 }
 
-// parseBunEntry extracts name and version from a bun.lock entry.
-// The key format is "name@version" or "@scope/name@version".
-// The entry can be a string (version) or an array with version as first element.
-func parseBunEntry(key string, entry json.RawMessage) (name, version string) {
-	// Try to extract version from entry
-	var strEntry string
-	if err := json.Unmarshal(entry, &strEntry); err == nil {
-		// Entry is a string - this is the version/resolution
-		version = extractBunVersion(strEntry)
-	} else {
-		// Entry might be an array
-		var arrEntry []json.RawMessage
-		if err := json.Unmarshal(entry, &arrEntry); err == nil && len(arrEntry) > 0 {
-			// First element is the version/resolution
-			if err := json.Unmarshal(arrEntry[0], &strEntry); err == nil {
-				version = extractBunVersion(strEntry)
-			}
-		}
+// parseBunResolution extracts name and version from the first element of a
+// bun.lock package entry. The resolution is a string like "name@version" or
+// "@scope/name@version"; the key supplies the canonical package name.
+func parseBunResolution(key string, raw json.RawMessage) (name, version string) {
+	var resolution string
+	if err := json.Unmarshal(raw, &resolution); err != nil {
+		return "", ""
 	}
-
-	// Extract name from key
-	name = extractBunPackageName(key)
-
-	return name, version
+	return extractBunPackageName(key), extractBunVersion(resolution)
 }
 
 // extractBunPackageName extracts the package name from a bun.lock key.

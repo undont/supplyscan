@@ -1313,6 +1313,7 @@ func TestPrintScanResult_SupplyChainFindings(t *testing.T) {
 func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 	resetOutputJSON()
 
+	// Two packages from the same scope so we can verify grouping.
 	result := &types.ScanResult{
 		Summary: types.ScanSummary{
 			LockfilesScanned:  1,
@@ -1321,9 +1322,20 @@ func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 		SupplyChain: types.SupplyChainResult{
 			Warnings: []types.SupplyChainWarning{
 				{
-					Package:          "@pnpm/network.ca-file",
-					InstalledVersion: "1.0.0",
-					Note:             "Package from at-risk namespace",
+					Package:          "@tanstack/react-query",
+					InstalledVersion: "5.95.2",
+					Namespace:        "@tanstack",
+					Campaign:         "TeamPCP / Mini Shai-Hulud",
+					CampaignWhen:     "Apr–May 2026",
+					Note:             "Your installed version is not on any IOC list.",
+				},
+				{
+					Package:          "@tanstack/query-core",
+					InstalledVersion: "5.95.2",
+					Namespace:        "@tanstack",
+					Campaign:         "TeamPCP / Mini Shai-Hulud",
+					CampaignWhen:     "Apr–May 2026",
+					Note:             "Your installed version is not on any IOC list.",
 				},
 			},
 		},
@@ -1333,22 +1345,31 @@ func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 		printScanResult(result)
 	})
 
-	// Should show warnings section
-	if !strings.Contains(output, "Warnings") {
-		t.Error("Expected 'Warnings' section")
+	// New section header makes clear these are informational, not findings.
+	if !strings.Contains(output, "Heads up") {
+		t.Errorf("Expected 'Heads up' section header, got: %s", output)
 	}
-
-	// Should show warning symbol
-	if !strings.Contains(output, "!") {
-		t.Error("Expected '!' warning symbol")
+	// Reassurance must be visible so users don't panic.
+	if !strings.Contains(output, "not on any IOC list") {
+		t.Error("Expected reassurance that installed versions are not on any IOC list")
 	}
-
-	// Should show package and note
-	if !strings.Contains(output, "@pnpm/network.ca-file") {
-		t.Error("Expected package name")
+	// Group header by scope, with campaign context.
+	if !strings.Contains(output, "@tanstack") {
+		t.Error("Expected scope '@tanstack' as group header")
 	}
-	if !strings.Contains(output, "at-risk namespace") {
-		t.Error("Expected warning note")
+	if !strings.Contains(output, "TeamPCP") {
+		t.Error("Expected campaign name in group header")
+	}
+	// Both packages should appear under the single group.
+	if !strings.Contains(output, "@tanstack/react-query@5.95.2") {
+		t.Error("Expected react-query@version in package list")
+	}
+	if !strings.Contains(output, "@tanstack/query-core@5.95.2") {
+		t.Error("Expected query-core@version in package list")
+	}
+	// Old alarming "Warnings" header should be gone.
+	if strings.Contains(output, "\nWarnings\n") {
+		t.Error("Old 'Warnings' section header should have been replaced")
 	}
 }
 
