@@ -150,9 +150,9 @@ func extractYarnPackageName(line string) string {
 		}
 	} else {
 		// Regular package: find the first @
-		atIdx := strings.Index(line, "@")
-		if atIdx != -1 {
-			return line[:atIdx]
+		before, _, ok := strings.Cut(line, "@")
+		if ok {
+			return before
 		}
 	}
 
@@ -188,6 +188,9 @@ func isYarnClassic(path string) (bool, error) {
 			return false, nil // Berry format
 		}
 		break
+	}
+	if err := scanner.Err(); err != nil {
+		return false, err
 	}
 
 	// Default to classic if unsure (simpler format)

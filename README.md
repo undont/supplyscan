@@ -8,7 +8,6 @@
 [![Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![Licence](https://img.shields.io/github/license/seanhalberthal/supplyscan?style=flat&label=licence&color=3B82F6)](LICENCE)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
-[![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat&logo=docker&logoColor=white)](https://github.com/seanhalberthal/supplyscan/pkgs/container/supplyscan)
 
 [![macOS](https://img.shields.io/badge/macOS-supported-6e7681?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-supported-6e7681?style=flat&logo=linux&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
@@ -235,57 +234,6 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 ### Vulnerability Data
 
 - **[npm audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)** for known CVEs
-
----
-
-<details>
-<summary><b>Docker</b></summary>
-
-If you prefer containerised execution, supplyscan is available as a Docker image. Note that you must mount your project directory into the container.
-
-### CLI via Docker
-
-```bash
-# Scan a directory
-docker run --rm -v "$PWD:$PWD:ro" ghcr.io/seanhalberthal/supplyscan:latest \
-  scan "$PWD"
-
-# Check a specific package (no mount needed)
-docker run --rm ghcr.io/seanhalberthal/supplyscan:latest \
-  check lodash 4.17.20
-```
-
-### MCP via Docker
-
-```bash
-claude mcp add mcp-supplyscan --transport stdio -s user -- \
-  docker run --rm -i --pull always \
-  -v "$PWD:$PWD:ro" \
-  ghcr.io/seanhalberthal/supplyscan:latest --mcp
-```
-
-Or add to your MCP config file:
-
-```json
-{
-  "mcpServers": {
-    "mcp-supplyscan": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "--pull", "always",
-        "-v", "/path/to/your/projects:/path/to/your/projects:ro",
-        "ghcr.io/seanhalberthal/supplyscan:latest",
-        "--mcp"
-      ]
-    }
-  }
-}
-```
-
-Replace `/path/to/your/projects` with the directory containing your projects. The mount uses the same path inside the container so file paths work seamlessly.
-
-</details>
 
 ---
 

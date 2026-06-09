@@ -94,13 +94,42 @@ func parseBun(path string) (Lockfile, error) {
 
 // parseBunResolution extracts name and version from the first element of a
 // bun.lock package entry. The resolution is a string like "name@version" or
-// "@scope/name@version"; the key supplies the canonical package name.
+// "@scope/name@version".
+//
+// The resolution — not the key — is the source of truth for the name. Bun
+// stores the hoisted copy of a package under a flat key ("postcss") but any
+// version that could not be hoisted under a "parent/child" path key
+// ("@expo/metro-config/postcss"). Deriving the name from the key mangles those
+// nested entries, so they match no real npm package and silently drop out of
+// the audit. The resolution carries the true name in every case.
 func parseBunResolution(key string, raw json.RawMessage) (name, version string) {
 	var resolution string
 	if err := json.Unmarshal(raw, &resolution); err != nil {
 		return "", ""
 	}
+	if n, v := splitBunResolution(resolution); n != "" {
+		return n, v
+	}
+	// Fall back to the key for resolutions that are not in "name@version" form
+	// (bare versions, URLs, git refs).
 	return extractBunPackageName(key), extractBunVersion(resolution)
+}
+
+// splitBunResolution splits a "name@version" / "@scope/name@version" resolution
+// into its package name and version. The version follows the final "@"; for a
+// scoped name the leading "@" is the scope marker, not a separator. Returns
+// empty strings unless the trailing segment looks like a semantic version, so
+// URL, git, and alias resolutions fall through to key-based extraction.
+func splitBunResolution(resolution string) (name, version string) {
+	at := strings.LastIndex(resolution, "@")
+	if at <= 0 {
+		return "", ""
+	}
+	v := resolution[at+1:]
+	if v == "" || v[0] < '0' || v[0] > '9' {
+		return "", ""
+	}
+	return resolution[:at], v
 }
 
 // extractBunPackageName extracts the package name from a bun.lock key.
@@ -116,8 +145,8 @@ func extractBunPackageName(key string) string {
 	}
 
 	// Regular package: name@version
-	if atIdx := strings.Index(key, "@"); atIdx != -1 {
-		return key[:atIdx]
+	if before, _, ok := strings.Cut(key, "@"); ok {
+		return before
 	}
 	return key
 }
