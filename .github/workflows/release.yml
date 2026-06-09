@@ -161,6 +161,47 @@ jobs:
           version: v2.10.1
           install-mode: goinstall
 
+  # Require a CHANGELOG entry on PRs whose title triggers a release.
+  # The heading rollover ([Unreleased] -> [vX.Y.Z]) is still done manually;
+  # this only guards against shipping a release with an empty Unreleased section.
+  changelog:
+    runs-on: ubuntu-latest
+    needs: check-skip
+    if: |
+      needs.check-skip.outputs.should_skip != 'true' &&
+      github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require changelog entry for release PRs
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$PR_TITLE" | grep -qiE '^(breaking:|BREAKING CHANGE:|feat:|add:|update:|fix:)'; then
+            echo "PR title does not trigger a release; no changelog entry required."
+            exit 0
+          fi
+
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md not found, but this PR triggers a release."
+            exit 1
+          fi
+
+          # Body of the "## [Unreleased]" section: lines up to the next "## " heading.
+          UNRELEASED=$(awk '
+            /^## \[Unreleased\]/ { capture=1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md)
+
+          if ! echo "$UNRELEASED" | grep -qE '^[[:space:]]*-[[:space:]]+\S'; then
+            echo "::error::Release-triggering PR ('$PR_TITLE') adds no entry under '## [Unreleased]' in CHANGELOG.md. Add a bullet describing the change."
+            exit 1
+          fi
+
+          echo "Found Unreleased changelog entries:"
+          echo "$UNRELEASED" | grep -E '^[[:space:]]*-[[:space:]]+\S'
+
   build-binaries:
     needs: [check-skip, test, lint, version]
     if: |
@@ -241,91 +282,13 @@ jobs:
             exit 1
           fi
 
-  docker:
-    permissions:
-      contents: read
-      packages: write
-    needs: [check-skip, test, lint, version]
-    if: |
-      always() &&
-      needs.check-skip.outputs.should_skip != 'true' &&
-      (
-        (github.event_name == 'pull_request' &&
-          (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-          (needs.lint.result == 'success' || needs.lint.result == 'skipped')
-        ) ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.version.outputs.should_release == 'true') ||
-        (github.event_name == 'workflow_dispatch')
-      )
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        if: |
-          startsWith(github.ref, 'refs/tags/v') ||
-          needs.version.outputs.should_release == 'true' ||
-          github.event_name == 'workflow_dispatch'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get version for Docker
-        id: docker_version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ inputs.tag }}"
-            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          elif [[ "${{ needs.version.outputs.new_tag }}" != "" ]]; then
-            TAG="${{ needs.version.outputs.new_tag }}"
-            echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-          else
-            echo "version=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-            echo "tag=" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=${{ steps.docker_version.outputs.tag }},enable=${{ steps.docker_version.outputs.tag != '' }}
-            type=raw,value=latest,enable=${{ steps.docker_version.outputs.tag != '' }}
-            type=ref,event=branch,enable=${{ steps.docker_version.outputs.tag == '' }}
-            type=sha
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ steps.docker_version.outputs.tag != '' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.docker_version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   release:
     permissions:
       contents: write
-    needs: [build-binaries, docker, version]
+    needs: [build-binaries, version]
     if: |
       always() &&
       needs.build-binaries.result == 'success' &&
-      needs.docker.result == 'success' &&
       (
         startsWith(github.ref, 'refs/tags/v') ||
         needs.version.outputs.should_release == 'true' ||
@@ -362,12 +325,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.release_tag.outputs.tag }}"
+
+          # Source release notes from CHANGELOG.md: prefer the section matching
+          # this version (e.g. "## [1.12.1]"), else the "## [Unreleased]" section.
+          extract_section() {
+            awk -v want="$1" '
+              $0 ~ "^## \\[" want "\\]" { capture=1; next }
+              capture && /^## / { exit }
+              capture { print }
+            ' CHANGELOG.md
+          }
+          NOTES=$(extract_section "${TAG#v}")
+          if ! echo "$NOTES" | grep -qE '^[[:space:]]*-[[:space:]]+\S'; then
+            NOTES=$(extract_section "Unreleased")
+          fi
+
+          if echo "$NOTES" | grep -qE '^[[:space:]]*-[[:space:]]+\S'; then
+            NOTES_ARG=(--notes "$NOTES")
+          else
+            echo "No curated changelog entries found; falling back to generated notes."
+            NOTES_ARG=(--generate-notes)
+          fi
+
           # Check if release already exists
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists, uploading assets"
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "$TAG" --generate-notes
+            gh release create "$TAG" dist/* --title "$TAG" "${NOTES_ARG[@]}"
           fi
 
   update-homebrew:

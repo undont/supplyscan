@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint lint-fix clean docker install fmt tidy vet check help
+.PHONY: build build-all test lint lint-fix clean install fmt tidy vet check help
 
 BINARY := supplyscan
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -36,10 +36,6 @@ clean:
 	rm -f $(BINARY)
 	rm -rf dist/
 
-# Build Docker image
-docker:
-	docker build -t $(BINARY):$(VERSION) -t $(BINARY):latest .
-
 # Install to $GOPATH/bin
 install:
 	go install $(LDFLAGS) ./cmd/supplyscan
@@ -70,7 +66,6 @@ help:
 	@echo "  lint        Run linter"
 	@echo "  lint-fix    Run linter with auto-fix"
 	@echo "  clean       Clean build artefacts"
-	@echo "  docker      Build Docker image"
 	@echo "  install     Install to \$$GOPATH/bin"
 	@echo "  fmt         Format Go code"
 	@echo "  tidy        Tidy Go modules"

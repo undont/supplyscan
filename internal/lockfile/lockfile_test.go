@@ -306,6 +306,58 @@ func TestDetectAndParse_Bun(t *testing.T) {
 	}
 }
 
+func TestParseBun_NestedDependencyKeys(t *testing.T) {
+	// Bun stores the hoisted copy of a package under a flat key (e.g.
+	// "postcss") and any version that could not be hoisted under a
+	// "parent/child" path key (e.g. "@expo/metro-config/postcss"). The
+	// package name must be derived from the resolution string (entries[0]),
+	// not the key — otherwise nested entries get mangled names like
+	// "@expo/metro-config/postcss", which match no real npm package and
+	// silently drop out of the audit, hiding vulnerable transitive versions.
+	content := `{
+  "lockfileVersion": 1,
+  "packages": {
+    "postcss": ["postcss@8.5.10", "", {}, "sha512-aaa"],
+    "@expo/metro-config/postcss": ["postcss@8.4.49", "", {}, "sha512-bbb"],
+    "brace-expansion": ["brace-expansion@1.1.14", "", {}, "sha512-ccc"],
+    "@expo/fingerprint/minimatch/brace-expansion": ["brace-expansion@5.0.5", "", {}, "sha512-ddd"],
+    "jayson/uuid": ["uuid@8.3.2", "", {}, "sha512-eee"],
+    "@coinbase/wallet-sdk/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-fff"]
+  }
+}`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "bun.lock")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := DetectAndParse(path)
+	if err != nil {
+		t.Fatalf("DetectAndParse() error = %v", err)
+	}
+
+	// A package can legitimately appear at multiple versions, so key the set
+	// on name@version rather than name alone.
+	got := make(map[string]bool)
+	for _, dep := range lf.Dependencies() {
+		got[dep.Name+"@"+dep.Version] = true
+	}
+
+	want := []string{
+		"postcss@8.5.10",         // hoisted, flat key
+		"postcss@8.4.49",         // nested under "@expo/metro-config/postcss"
+		"brace-expansion@1.1.14", // hoisted, flat key
+		"brace-expansion@5.0.5",  // nested two levels deep
+		"uuid@8.3.2",             // nested under non-scoped parent "jayson/uuid"
+		"@noble/hashes@1.8.0",    // nested with a scoped leaf
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("missing dependency %q — nested-key package name was mis-extracted; got %v", w, got)
+		}
+	}
+}
+
 func TestDetectAndParse_Deno(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "deno", "deno.lock")
 	lf, err := DetectAndParse(path)
@@ -592,6 +644,14 @@ func TestParsePnpmPackageKey(t *testing.T) {
 		{"lodash@4.17.21", "4.17.21", "lodash", "4.17.21"},
 		// With peer deps suffix
 		{"/pkg/1.0.0_peer@1.0.0", "", "pkg", "1.0.0"},
+		// v6 peer-dependency suffix in "(...)" form must be stripped from the
+		// version, and must not corrupt the name (the suffix contains "@").
+		{"/@babel/plugin-transform-react-jsx@7.22.15(@babel/core@7.23.0)", "", "@babel/plugin-transform-react-jsx", "7.22.15"},
+		{"react-dom@18.2.0(react@18.2.0)", "", "react-dom", "18.2.0"},
+		{"@babel/core@7.23.0(eslint@5.5.0)", "", "@babel/core", "7.23.0"},
+		// Non-scoped key with an explicit version: the "(...)" suffix in the
+		// key must not drag part of the peer ref into the name.
+		{"react-dom@18.2.0(react@18.2.0)", "18.2.0", "react-dom", "18.2.0"},
 	}
 
 	for _, tt := range tests {
@@ -602,6 +662,69 @@ func TestParsePnpmPackageKey(t *testing.T) {
 					tt.key, tt.explicitVersion, gotName, gotVersion, tt.wantName, tt.wantVersion)
 			}
 		})
+	}
+}
+
+func TestParsePNPM_V6PeerSuffixes(t *testing.T) {
+	// pnpm v6 encodes peer-dependency context as a "(...)" suffix on the
+	// packages: keys. Left unstripped, the version becomes unparseable
+	// (e.g. "7.23.0(react@18.2.0)") — which dodges range filtering in the
+	// audit (false positives) — and the same package under two peer contexts
+	// is counted as two distinct dependencies instead of deduping.
+	content := `lockfileVersion: '6.0'
+
+packages:
+
+  /@babel/core@7.23.0(eslint@5.5.0):
+    resolution: {integrity: sha512-aaa}
+    dev: false
+
+  /@babel/core@7.23.0(eslint@8.0.0):
+    resolution: {integrity: sha512-aaa}
+    dev: false
+
+  /@babel/plugin-transform-react-jsx@7.22.15(@babel/core@7.23.0):
+    resolution: {integrity: sha512-bbb}
+    dev: false
+
+  /react-dom@18.2.0(react@18.2.0):
+    resolution: {integrity: sha512-ccc}
+    dev: false
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "pnpm-lock.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := DetectAndParse(path)
+	if err != nil {
+		t.Fatalf("DetectAndParse() error = %v", err)
+	}
+
+	deps := lf.Dependencies()
+
+	// Every version must be a clean semver — no leftover "(...)" peer suffix.
+	for _, d := range deps {
+		if strings.ContainsAny(d.Version, "()") {
+			t.Errorf("dependency %q has an unstripped peer suffix in its version: %q", d.Name, d.Version)
+		}
+	}
+
+	versions := make(map[string][]string)
+	for _, d := range deps {
+		versions[d.Name] = append(versions[d.Name], d.Version)
+	}
+
+	// The two @babel/core peer variants must collapse to a single 7.23.0.
+	if got := versions["@babel/core"]; len(got) != 1 || got[0] != "7.23.0" {
+		t.Errorf("@babel/core versions = %v, want [7.23.0] (peer variants should dedupe)", got)
+	}
+	if got := versions["@babel/plugin-transform-react-jsx"]; len(got) != 1 || got[0] != "7.22.15" {
+		t.Errorf("@babel/plugin-transform-react-jsx versions = %v, want [7.22.15]", got)
+	}
+	if got := versions["react-dom"]; len(got) != 1 || got[0] != "18.2.0" {
+		t.Errorf("react-dom versions = %v, want [18.2.0]", got)
 	}
 }
 
