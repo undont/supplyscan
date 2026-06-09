@@ -111,12 +111,7 @@ func parsePnpmPackageKey(key, explicitVersion string) (name, version string) {
 
 // extractPnpmName extracts the package name from a pnpm key (v6+ format with explicit version).
 func extractPnpmName(key string) string {
-	atIdx := strings.LastIndex(key, "@")
-	if atIdx <= 0 {
-		return ""
-	}
-
-	// Scoped package: @scope/pkg@version - find second @
+	// Scoped package: @scope/pkg@version - the name ends at the second @.
 	if strings.HasPrefix(key, "@") {
 		if innerAt := strings.Index(key[1:], "@"); innerAt != -1 {
 			return key[:innerAt+1]
@@ -124,7 +119,13 @@ func extractPnpmName(key string) string {
 		return ""
 	}
 
-	return key[:atIdx]
+	// Non-scoped: name@version[(peer@x)]. A package name never contains "@",
+	// so the name ends at the FIRST @ — using the last @ would absorb part of
+	// a "(peer@x)" suffix into the name.
+	if atIdx := strings.Index(key, "@"); atIdx > 0 {
+		return key[:atIdx]
+	}
+	return ""
 }
 
 // parsePnpmV5Key parses v5 format: /package/version or /@scope/package/version
@@ -173,10 +174,15 @@ func parsePnpmV5Key(key string) (name, version string) {
 	return "", ""
 }
 
-// stripPeerDeps removes the peer dependency suffix (e.g., "1.0.0_peer" -> "1.0.0").
+// stripPeerDeps removes the peer dependency suffix from a pnpm version.
+// pnpm v5 uses an underscore form ("1.0.0_peer@2.0.0") and pnpm v6 a
+// parenthesised form ("1.0.0(peer@2.0.0)"); both must be reduced to "1.0.0".
 func stripPeerDeps(version string) string {
 	if idx := strings.Index(version, "_"); idx != -1 {
-		return version[:idx]
+		version = version[:idx]
+	}
+	if idx := strings.Index(version, "("); idx != -1 {
+		version = version[:idx]
 	}
 	return version
 }

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fix bun lockfile parser mangling package names from nested `parent/child` dependency keys, which silently dropped non-hoisted transitive versions from the audit (e.g. missed vulnerable `postcss` and `brace-expansion` copies)
+- Fix pnpm lockfile parser not stripping v6-style `(peer@version)` suffixes, which left versions unparseable (risking false positives) and prevented peer-context duplicates from deduplicating
+
+## [1.12.0](https://github.com/seanhalberthal/supplyscan/compare/v1.11.0...v1.12.0)
+
 - Add DataDog TeamPCP (Mini Shai-Hulud) IOC source for the self-spreading npm worm targeting SAP CAP, TanStack, AntV, and related scopes
 - Add at-risk namespace warnings for `@cap-js`, `@tanstack`, `@antv`, `@lint-md`, `@openclaw-cn`, and `@starmind`
 - Fix bun lockfile parser treating each entry's integrity hash as a duplicate package version (scans of bun projects were double-counting dependencies)
