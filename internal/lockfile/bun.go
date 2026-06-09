@@ -145,8 +145,8 @@ func extractBunPackageName(key string) string {
 	}
 
 	// Regular package: name@version
-	if atIdx := strings.Index(key, "@"); atIdx != -1 {
-		return key[:atIdx]
+	if before, _, ok := strings.Cut(key, "@"); ok {
+		return before
 	}
 	return key
 }
