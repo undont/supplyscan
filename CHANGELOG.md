@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add `supplyscan .` shorthand for scanning the current directory (equivalent to `supplyscan scan .`)
+
+## [1.12.1](https://github.com/seanhalberthal/supplyscan/compare/v1.12.0...v1.12.1)
+
 - Fix bun lockfile parser mangling package names from nested `parent/child` dependency keys, which silently dropped non-hoisted transitive versions from the audit (e.g. missed vulnerable `postcss` and `brace-expansion` copies)
 - Fix pnpm lockfile parser not stripping v6-style `(peer@version)` suffixes, which left versions unparseable (risking false positives) and prevented peer-context duplicates from deduplicating
 

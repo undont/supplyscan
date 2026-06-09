@@ -34,14 +34,10 @@ func Run(scan scanner.Scanner, args []string) {
 	switch args[0] {
 	case "status":
 		runStatus(scan)
+	case ".":
+		dispatchScan(scan, args)
 	case "scan":
-		path := "."
-		flagArgs := args[1:]
-		if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
-			path = args[1]
-			flagArgs = args[2:]
-		}
-		runScan(scan, path, parseScanFlags(flagArgs))
+		dispatchScan(scan, args)
 	case "check":
 		if len(args) < 3 {
 			printStyledError("check requires package and version arguments")
@@ -60,6 +56,17 @@ func Run(scan scanner.Scanner, args []string) {
 		exitFunc(1)
 		return
 	}
+}
+
+// dispatchScan is extracted so both "supplyscan scan ." and "supplyscan ." can yield the same result
+func dispatchScan(scan scanner.Scanner, args []string) {
+	path := "."
+	flagArgs := args[1:]
+	if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
+		path = args[1]
+		flagArgs = args[2:]
+	}
+	runScan(scan, path, parseScanFlags(flagArgs))
 }
 
 // parseGlobalFlags extracts global flags from args and returns remaining args.
