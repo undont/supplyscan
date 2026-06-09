@@ -114,6 +114,7 @@ The CLI is the default mode; no flags required.
 ```bash
 # Scan current directory
 supplyscan scan
+supplyscan .  # shorthand
 
 # Scan specific path recursively
 supplyscan scan /path/to/monorepo --recursive
