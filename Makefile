@@ -2,7 +2,7 @@
 
 BINARY := supplyscan
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags="-s -w -X github.com/seanhalberthal/supplyscan/internal/types.Version=$(VERSION)"
+LDFLAGS := -ldflags="-s -w -X github.com/undont/supplyscan/internal/types.Version=$(VERSION)"
 GOLANGCI_LINT_VERSION := v2.10.1
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 

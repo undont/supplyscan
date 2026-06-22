@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/seanhalberthal/supplyscan/internal/scanner"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/scanner"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // mockScanner implements scanner.Scanner for testing without network calls.

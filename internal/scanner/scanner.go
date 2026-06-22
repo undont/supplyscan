@@ -4,10 +4,10 @@ package scanner
 import (
 	"time"
 
-	"github.com/seanhalberthal/supplyscan/internal/audit"
-	"github.com/seanhalberthal/supplyscan/internal/lockfile"
-	"github.com/seanhalberthal/supplyscan/internal/supplychain"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/audit"
+	"github.com/undont/supplyscan/internal/lockfile"
+	"github.com/undont/supplyscan/internal/supplychain"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // Scanner defines the interface for security scanning operations.

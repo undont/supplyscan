@@ -4,13 +4,13 @@
 
 **Scans JavaScript lockfiles for supply-chain compromises and known vulnerabilities.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/seanhalberthal/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/seanhalberthal/supplyscan/actions/workflows/release.yml)
-[![Release](https://img.shields.io/github/v/release/seanhalberthal/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/seanhalberthal/supplyscan/releases/latest)
-[![Licence](https://img.shields.io/github/license/seanhalberthal/supplyscan?style=flat&label=licence&color=3B82F6)](LICENCE)
+[![CI](https://img.shields.io/github/actions/workflow/status/undont/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/undont/supplyscan/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/undont/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/undont/supplyscan/releases/latest)
+[![Licence](https://img.shields.io/github/license/undont/supplyscan?style=flat&label=licence&color=3B82F6)](LICENCE)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 
-[![macOS](https://img.shields.io/badge/macOS-supported-6e7681?style=flat&logo=apple&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
-[![Linux](https://img.shields.io/badge/Linux-supported-6e7681?style=flat&logo=linux&logoColor=white)](https://github.com/seanhalberthal/supplyscan/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-supported-6e7681?style=flat&logo=apple&logoColor=white)](https://github.com/undont/supplyscan/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-supported-6e7681?style=flat&logo=linux&logoColor=white)](https://github.com/undont/supplyscan/releases/latest)
 [![MCP](https://img.shields.io/badge/MCP-compatible-3B82F6?style=flat)](https://modelcontextprotocol.io)
 
 [Quick Start](#quick-start) · [Installation](#installation) · [CLI Usage](#cli-usage) · [MCP Server](#mcp-server-integration) · [Data Sources](#data-sources)
@@ -24,7 +24,7 @@
 ## Quick Start
 
 ```bash
-brew install seanhalberthal/tap/supplyscan
+brew install undont/tap/supplyscan
 
 supplyscan scan                       # scan current directory
 supplyscan check lodash 4.17.20      # check a specific package
@@ -61,13 +61,13 @@ Written in Go and shipped as a static binary, so the scanner itself can't be com
 ### Homebrew
 
 ```bash
-brew install seanhalberthal/tap/supplyscan
+brew install undont/tap/supplyscan
 ```
 
 ### Go Install
 
 ```bash
-go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
+go install github.com/undont/supplyscan/cmd/supplyscan@latest
 ```
 
 Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
@@ -75,19 +75,19 @@ Requires Go 1.26+ and `$GOPATH/bin` in your PATH.
 <details>
 <summary><b>Download binary</b></summary>
 
-Pre-built binaries are available from [GitHub Releases](https://github.com/seanhalberthal/supplyscan/releases):
+Pre-built binaries are available from [GitHub Releases](https://github.com/undont/supplyscan/releases):
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-darwin-arm64 \
+curl -L https://github.com/undont/supplyscan/releases/latest/download/supplyscan-darwin-arm64 \
   -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 
 # macOS (Intel)
-curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-darwin-amd64 \
+curl -L https://github.com/undont/supplyscan/releases/latest/download/supplyscan-darwin-amd64 \
   -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 
 # Linux (x64)
-curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/supplyscan-linux-amd64 \
+curl -L https://github.com/undont/supplyscan/releases/latest/download/supplyscan-linux-amd64 \
   -o /usr/local/bin/supplyscan && chmod +x /usr/local/bin/supplyscan
 ```
 
@@ -97,7 +97,7 @@ curl -L https://github.com/seanhalberthal/supplyscan/releases/latest/download/su
 <summary><b>Build from source</b></summary>
 
 ```bash
-git clone https://github.com/seanhalberthal/supplyscan.git
+git clone https://github.com/undont/supplyscan.git
 cd supplyscan
 go build -o supplyscan ./cmd/supplyscan
 mv supplyscan /usr/local/bin/
@@ -153,7 +153,7 @@ For AI agent integration (Claude Code, Cursor, etc.), supplyscan runs as an MCP 
 ### Claude Code
 
 ```bash
-brew install seanhalberthal/tap/supplyscan && \
+brew install undont/tap/supplyscan && \
 claude mcp add mcp-supplyscan --transport stdio -s user -- supplyscan --mcp
 ```
 
@@ -216,7 +216,7 @@ Add to your MCP config file:
 brew upgrade supplyscan
 
 # Go
-go install github.com/seanhalberthal/supplyscan/cmd/supplyscan@latest
+go install github.com/undont/supplyscan/cmd/supplyscan@latest
 ```
 
 Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current version.

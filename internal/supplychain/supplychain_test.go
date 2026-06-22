@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // mockTestSource implements IOCSource for testing

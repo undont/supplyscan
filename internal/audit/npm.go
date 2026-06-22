@@ -12,7 +12,7 @@ import (
 
 	semver "github.com/Masterminds/semver/v3"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // defaultEndpoint is the npm bulk advisory endpoint (npm v7+).

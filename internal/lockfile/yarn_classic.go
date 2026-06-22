@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // yarnClassicLockfile represents a parsed yarn.lock v1 (classic) file.

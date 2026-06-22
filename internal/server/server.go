@@ -9,9 +9,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/seanhalberthal/supplyscan/internal/findings"
-	"github.com/seanhalberthal/supplyscan/internal/scanner"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/findings"
+	"github.com/undont/supplyscan/internal/scanner"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // FindingsError is returned when scan or check operations complete successfully

@@ -1,7 +1,7 @@
 // Package findings provides utilities for detecting security findings in scan results.
 package findings
 
-import "github.com/seanhalberthal/supplyscan/internal/types"
+import "github.com/undont/supplyscan/internal/types"
 
 // HasScanFindings checks if a scan result contains any vulnerabilities or supply chain compromises.
 func HasScanFindings(result *types.ScanResult) bool {
