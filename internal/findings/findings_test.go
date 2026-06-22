@@ -3,7 +3,7 @@ package findings
 import (
 	"testing"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // =============================================================================

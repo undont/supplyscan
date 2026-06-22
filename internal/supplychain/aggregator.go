@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // aggregator manages multiple IOC sources and merges their data.

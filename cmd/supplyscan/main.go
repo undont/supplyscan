@@ -5,9 +5,9 @@ import (
 	"flag"
 	"log"
 
-	"github.com/seanhalberthal/supplyscan/internal/cli"
-	"github.com/seanhalberthal/supplyscan/internal/scanner"
-	"github.com/seanhalberthal/supplyscan/internal/server"
+	"github.com/undont/supplyscan/internal/cli"
+	"github.com/undont/supplyscan/internal/scanner"
+	"github.com/undont/supplyscan/internal/server"
 )
 
 func main() {

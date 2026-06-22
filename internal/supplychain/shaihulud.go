@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan/internal/supplychain/sources"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/supplychain/sources"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // Detector checks packages against the IOC database.

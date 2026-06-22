@@ -179,7 +179,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/seanhalberthal/supplyscan
+        - github.com/undont/supplyscan
 
 issues:
   max-issues-per-linter: 0

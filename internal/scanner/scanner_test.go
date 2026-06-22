@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // Helper to create test fixtures

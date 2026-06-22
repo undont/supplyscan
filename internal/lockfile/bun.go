@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanhalberthal/supplyscan/internal/jsonc"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/jsonc"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // bunLockfile represents a parsed bun.lock file.

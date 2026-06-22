@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // buildTestZip creates an in-memory zip archive from a map of filename -> vulnerability.

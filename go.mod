@@ -1,4 +1,4 @@
-module github.com/seanhalberthal/supplyscan
+module github.com/undont/supplyscan
 
 go 1.26.0
 

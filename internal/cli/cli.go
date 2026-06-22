@@ -10,9 +10,9 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 
-	"github.com/seanhalberthal/supplyscan/internal/findings"
-	"github.com/seanhalberthal/supplyscan/internal/scanner"
-	"github.com/seanhalberthal/supplyscan/internal/types"
+	"github.com/undont/supplyscan/internal/findings"
+	"github.com/undont/supplyscan/internal/scanner"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // exitFunc is the function used to exit the program. Override in tests.
