@@ -69,6 +69,9 @@ var SupportedLockfiles = []string{
 	"deno.lock",
 	"requirements.txt",
 	"poetry.lock",
+	"Pipfile.lock",
+	"uv.lock",
+	"pdm.lock",
 }
 
 // CompromisedPackage represents a known malicious package from IOC data.

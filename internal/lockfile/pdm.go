@@ -4,27 +4,27 @@ import (
 	"github.com/undont/supplyscan/internal/types"
 )
 
-// poetryLockfile represents a parsed poetry.lock file.
-type poetryLockfile struct {
+// pdmLockfile represents a parsed pdm.lock file.
+type pdmLockfile struct {
 	path string
 	deps []types.Dependency
 }
 
-func (l *poetryLockfile) Type() string {
-	return "poetry"
+func (l *pdmLockfile) Type() string {
+	return "pdm"
 }
 
-func (l *poetryLockfile) Path() string {
+func (l *pdmLockfile) Path() string {
 	return l.path
 }
 
-func (l *poetryLockfile) Dependencies() []types.Dependency {
+func (l *pdmLockfile) Dependencies() []types.Dependency {
 	return l.deps
 }
 
-// parsePoetry parses a poetry.lock file: TOML [[package]] tables with a
-// `category` field that is "dev" for development dependencies.
-func parsePoetry(path string) (Lockfile, error) {
+// parsePdm parses a pdm.lock file: TOML [[package]] tables with a `groups`
+// array; membership of the "dev" group marks a development dependency.
+func parsePdm(path string) (Lockfile, error) {
 	deps, err := parseTOMLPackages(path, func(fields map[string]string) (types.Dependency, bool) {
 		name := tomlUnquote(fields["name"])
 		version := tomlUnquote(fields["version"])
@@ -35,12 +35,12 @@ func parsePoetry(path string) (Lockfile, error) {
 			Name:      types.NormalizePyPIName(name),
 			Version:   version,
 			Ecosystem: types.EcosystemPyPI,
-			Dev:       tomlUnquote(fields["category"]) == "dev",
+			Dev:       tomlArrayContains(fields["groups"], "dev"),
 		}, true
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &poetryLockfile{path: path, deps: deps}, nil
+	return &pdmLockfile{path: path, deps: deps}, nil
 }

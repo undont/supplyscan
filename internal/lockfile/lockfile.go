@@ -41,6 +41,12 @@ func DetectAndParse(path string) (Lockfile, error) {
 		return parseRequirements(path)
 	case "poetry.lock":
 		return parsePoetry(path)
+	case "Pipfile.lock":
+		return parsePipfile(path)
+	case "uv.lock":
+		return parseUv(path)
+	case "pdm.lock":
+		return parsePdm(path)
 	default:
 		return nil, errUnknownFormat
 	}
@@ -108,7 +114,8 @@ func isLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
 		"pnpm-lock.yaml", "bun.lock", "deno.lock",
-		"requirements.txt", "poetry.lock":
+		"requirements.txt", "poetry.lock", "Pipfile.lock",
+		"uv.lock", "pdm.lock":
 		return true
 	default:
 		return false
