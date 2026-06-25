@@ -2,7 +2,7 @@
 
 # supplyscan
 
-**Scans JavaScript lockfiles for supply-chain compromises and known vulnerabilities.**
+**Scans JavaScript and Python lockfiles for supply-chain compromises and known vulnerabilities.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/undont/supplyscan/release.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=CI)](https://github.com/undont/supplyscan/actions/workflows/release.yml)
 [![Release](https://img.shields.io/github/v/release/undont/supplyscan?style=flat&logo=github&logoColor=white&label=Release&color=3B82F6)](https://github.com/undont/supplyscan/releases/latest)
@@ -26,17 +26,19 @@
 ```bash
 brew install undont/tap/supplyscan
 
-supplyscan scan                       # scan current directory
-supplyscan check lodash 4.17.20      # check a specific package
+supplyscan scan                              # scan current directory
+supplyscan check lodash 4.17.20              # check an npm package
+supplyscan check django 2.2.0 -e pypi        # check a PyPI package
 ```
 
 ---
 
 ## Features
 
-- **Supply-chain detection** by aggregating IOCs from DataDog (Shai-Hulud v2 and TeamPCP / Mini Shai-Hulud), GitHub Advisory Database, and OSV.dev
-- **Vulnerability scanning** through the npm audit API for known CVEs
-- **Multi-format lockfile support** across npm, Yarn (classic & berry), pnpm, Bun, and Deno
+- **Supply-chain detection across npm and PyPI** by aggregating IOCs from DataDog (Shai-Hulud v2 and TeamPCP / Mini Shai-Hulud), GitHub Advisory Database, and OSV.dev, matched per-ecosystem so same-named packages don't collide
+- **Vulnerability scanning** via the npm audit API for npm and OSV.dev for PyPI
+- **Multi-format lockfile support** across npm, Yarn (classic & berry), pnpm, Bun, Deno, and Python (pip, Poetry, Pipenv, uv, PDM)
+- **Heuristic advisories** for packages that run install scripts and for invisible or non-ASCII characters in package names or URLs
 - **CLI and MCP modes** in a single binary, switchable with `--mcp`
 - **JSON output** for scripting and CI use
 - **Per-source caching** with a configurable TTL, so each IOC source refreshes on its own schedule
@@ -51,8 +53,13 @@ supplyscan check lodash 4.17.20      # check a specific package
 | pnpm | `pnpm-lock.yaml` |
 | Bun | `bun.lock` |
 | Deno | `deno.lock` |
+| pip | `requirements.txt` |
+| Poetry | `poetry.lock` |
+| Pipenv | `Pipfile.lock` |
+| uv | `uv.lock` |
+| PDM | `pdm.lock` |
 
-Written in Go and shipped as a static binary, so the scanner itself can't be compromised by the npm ecosystem it scans.
+Written in Go and shipped as a static binary, so the scanner itself can't be compromised by the package ecosystems it scans.
 
 ---
 
@@ -126,8 +133,12 @@ supplyscan scan --no-dev
 # Combine flags
 supplyscan scan /path/to/monorepo -r --no-dev
 
-# Check a specific package
+# Check a specific package (npm by default)
 supplyscan check lodash 4.17.20
+
+# Check a PyPI package
+supplyscan check django 2.2.0 --ecosystem pypi
+supplyscan check django 2.2.0 -e pypi  # short form
 
 # Refresh IOC database
 supplyscan refresh
@@ -198,6 +209,7 @@ Add to your MCP config file:
 |-----------|------|-------------|
 | `package` | string | Package name |
 | `version` | string | Package version |
+| `ecosystem` | string | `npm` (default) or `pypi` |
 
 #### `supplyscan_refresh`
 
@@ -230,11 +242,12 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 - **[DataDog Indicators of Compromise — Shai-Hulud v2](https://github.com/DataDog/indicators-of-compromise/tree/main/shai-hulud-2.0)** for the original Shai-Hulud worm packages
 - **[DataDog Indicators of Compromise — TeamPCP](https://github.com/DataDog/indicators-of-compromise/tree/main/teampcp)** for the Mini Shai-Hulud / TeamPCP campaign (npm rows only)
 - **[GitHub Advisory Database](https://github.com/advisories)** for npm malware advisories (GHSA)
-- **[OSV.dev](https://osv.dev)** for npm malware entries from the MAL ecosystem
+- **[OSV.dev](https://osv.dev)** for npm and PyPI malware entries (`MAL-` advisories)
 
 ### Vulnerability Data
 
-- **[npm audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)** for known CVEs
+- **[npm audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)** for known CVEs in npm packages
+- **[OSV.dev querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)** for known vulnerabilities in PyPI packages
 
 ---
 

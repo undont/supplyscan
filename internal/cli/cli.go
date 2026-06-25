@@ -85,7 +85,7 @@ func parseGlobalFlags(args []string) []string {
 }
 
 func printUsage() {
-	fmt.Println(headerStyle.Render("supplyscan") + " - JavaScript ecosystem security scanner")
+	fmt.Println(headerStyle.Render("supplyscan") + " - JavaScript and Python supply-chain scanner")
 	fmt.Println()
 	fmt.Println(formatSection("Usage"))
 	fmt.Println("  supplyscan <command> [options]    Run CLI commands (default)")

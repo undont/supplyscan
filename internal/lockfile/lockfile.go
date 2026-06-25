@@ -1,4 +1,4 @@
-// Package lockfile provides parsers for various JavaScript lockfile formats.
+// Package lockfile provides parsers for various JavaScript and Python lockfile formats.
 package lockfile
 
 import (
