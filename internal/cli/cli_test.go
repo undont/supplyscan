@@ -28,7 +28,7 @@ func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
 	return m.scanResult, m.scanErr
 }
 
-func (m *mockScanner) CheckPackage(_, _ string) (*types.CheckResult, error) {
+func (m *mockScanner) CheckPackage(_, _, _ string) (*types.CheckResult, error) {
 	return m.checkResult, m.checkErr
 }
 
@@ -485,7 +485,7 @@ func TestRunCheck_JSON(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.21")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
 	})
 
 	// Should be valid JSON
@@ -515,7 +515,7 @@ func TestRunCheck_Styled(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.21")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
 	})
 
 	if *exitCode != 0 {
@@ -1034,7 +1034,7 @@ func TestCLI_CheckIntegration(t *testing.T) {
 
 	// Check a scoped package
 	output := captureOutput(func() {
-		runCheck(mock, "@babel/core", "7.23.0")
+		runCheck(mock, types.EcosystemNPM, "@babel/core", "7.23.0")
 	})
 
 	var result types.CheckResult
@@ -1511,7 +1511,7 @@ func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.15")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.15")
 	})
 
 	if *exitCode != 2 {
@@ -1554,7 +1554,7 @@ func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.21")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
 	})
 
 	if *exitCode != 0 {
@@ -1923,7 +1923,7 @@ func TestRunCheck_ExitCode0_NoFindings(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.21")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
 	})
 
 	if *exitCode != 0 {
@@ -1959,7 +1959,7 @@ func TestRunCheck_ExitCode2_WithVulnerabilities(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "lodash", "4.17.15")
+		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.15")
 	})
 
 	if *exitCode != 2 {
@@ -1990,7 +1990,7 @@ func TestRunCheck_ExitCode2_WithSupplyChainCompromise(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "malicious-pkg", "1.0.0")
+		runCheck(mock, types.EcosystemNPM, "malicious-pkg", "1.0.0")
 	})
 
 	if *exitCode != 2 {
@@ -2027,7 +2027,7 @@ func TestRunCheck_ExitCode2_WithBothFindings(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, "malicious-pkg", "1.0.0")
+		runCheck(mock, types.EcosystemNPM, "malicious-pkg", "1.0.0")
 	})
 
 	if *exitCode != 2 {

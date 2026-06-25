@@ -113,7 +113,7 @@ func TestAggregator_EnsureLoaded_Success(t *testing.T) {
 		t.Errorf("len(Packages) = %d, want 1", len(db.Packages))
 	}
 
-	if pkg, ok := db.Packages["test-pkg"]; !ok {
+	if pkg, ok := db.Packages["npm:test-pkg"]; !ok {
 		t.Error("Packages missing 'test-pkg'")
 	} else if len(pkg.Sources) != 1 || pkg.Sources[0] != "mock" {
 		t.Errorf("pkg.Sources = %v, want [mock]", pkg.Sources)
@@ -169,7 +169,7 @@ func TestAggregator_EnsureLoaded_MultipleSources(t *testing.T) {
 	}
 
 	// Check merged pkg-shared
-	pkg, ok := db.Packages["pkg-shared"]
+	pkg, ok := db.Packages["npm:pkg-shared"]
 	if !ok {
 		t.Fatal("Packages missing 'pkg-shared'")
 	}
@@ -671,7 +671,7 @@ func TestAggregator_DiskCacheOnColdStart(t *testing.T) {
 		t.Fatal("getDatabase() returned nil — expected disk cache to be loaded")
 		return
 	}
-	if _, ok := db.Packages["cached-pkg"]; !ok {
+	if _, ok := db.Packages["npm:cached-pkg"]; !ok {
 		t.Error("expected 'cached-pkg' from disk cache, not found")
 	}
 }
@@ -731,7 +731,7 @@ func TestAggregator_StaleDataSurvivesFailedRefresh(t *testing.T) {
 		t.Fatal("getDatabase() returned nil — stale data should survive failed refresh")
 		return
 	}
-	if _, ok := db.Packages["original-pkg"]; !ok {
+	if _, ok := db.Packages["npm:original-pkg"]; !ok {
 		t.Error("expected 'original-pkg' to survive failed background refresh")
 	}
 }
@@ -775,7 +775,7 @@ func TestAggregator_MergeSourceData(t *testing.T) {
 	_ = agg.ensureLoaded(ctx)
 
 	db := agg.getDatabase()
-	pkg := db.Packages["pkg"]
+	pkg := db.Packages["npm:pkg"]
 
 	// Check versions are merged
 	if len(pkg.Versions) != 3 {

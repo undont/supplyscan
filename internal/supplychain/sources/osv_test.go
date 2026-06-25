@@ -55,8 +55,11 @@ func TestOSVSource_WithOptions(t *testing.T) {
 
 	src := NewOSVSource(WithOSVZipURL(customZip))
 
-	if src.zipURL != customZip {
-		t.Errorf("zipURL = %q, want %q", src.zipURL, customZip)
+	if src.npmZipURL != customZip {
+		t.Errorf("npmZipURL = %q, want %q", src.npmZipURL, customZip)
+	}
+	if src.pypiZipURL != "" {
+		t.Errorf("pypiZipURL = %q, want empty (WithOSVZipURL disables PyPI)", src.pypiZipURL)
 	}
 }
 
@@ -128,9 +131,9 @@ func TestOSVSource_Fetch_Success(t *testing.T) {
 	}
 
 	// Check evil-pkg (explicit versions)
-	pkg, ok := data.Packages["evil-pkg"]
+	pkg, ok := data.Packages["npm:evil-pkg"]
 	if !ok {
-		t.Fatal("Packages missing 'evil-pkg'")
+		t.Fatal("Packages missing 'npm:evil-pkg'")
 	}
 	if len(pkg.Versions) != 2 {
 		t.Errorf("evil-pkg versions = %v, want 2 versions", pkg.Versions)
@@ -143,8 +146,8 @@ func TestOSVSource_Fetch_Success(t *testing.T) {
 	}
 
 	// Check typosquat-lodash (all versions via range)
-	if pkg, ok := data.Packages["typosquat-lodash"]; !ok {
-		t.Error("Packages missing 'typosquat-lodash'")
+	if pkg, ok := data.Packages["npm:typosquat-lodash"]; !ok {
+		t.Error("Packages missing 'npm:typosquat-lodash'")
 	} else {
 		if len(pkg.Versions) != 1 || pkg.Versions[0] != ">= 0" {
 			t.Errorf("typosquat-lodash versions = %v, want [>= 0]", pkg.Versions)
@@ -341,11 +344,54 @@ func TestOSVSource_Fetch_MixedEntries(t *testing.T) {
 		t.Fatalf("len(Packages) = %d, want 1 (only MAL entry)", len(data.Packages))
 	}
 
-	if _, ok := data.Packages["evil-pkg"]; !ok {
-		t.Error("Packages missing 'evil-pkg'")
+	if _, ok := data.Packages["npm:evil-pkg"]; !ok {
+		t.Error("Packages missing 'npm:evil-pkg'")
 	}
-	if _, ok := data.Packages["vulnerable-pkg"]; ok {
+	if _, ok := data.Packages["npm:vulnerable-pkg"]; ok {
 		t.Error("Packages should not contain 'vulnerable-pkg' (non-MAL entry)")
+	}
+}
+
+func TestOSVSource_Fetch_PyPI(t *testing.T) {
+	// PyPI entry with a name that needs PEP 503 normalisation (PyTorch_Lightning)
+	vuln := &osvVulnerability{
+		ID: "MAL-2026-9001",
+		Affected: []osvAffected{
+			{
+				Package:  osvPackage{Ecosystem: "PyPI", Name: "PyTorch_Lightning"},
+				Versions: []string{"1.9.0"},
+			},
+		},
+	}
+
+	zipData := buildTestZip(t, map[string]*osvVulnerability{
+		"MAL-2026-9001.json": vuln,
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
+	defer server.Close()
+
+	// disable npm, point PyPI at the test server
+	src := NewOSVSource(WithOSVZipURL(""), WithOSVPyPIZipURL(server.URL))
+	ctx := context.Background()
+
+	data, err := src.Fetch(ctx, server.Client())
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+
+	pkg, ok := data.Packages["pypi:pytorch-lightning"]
+	if !ok {
+		t.Fatalf("Packages missing normalised key 'pypi:pytorch-lightning'; got %v", data.Packages)
+	}
+	if pkg.Ecosystem != types.EcosystemPyPI {
+		t.Errorf("Ecosystem = %q, want %q", pkg.Ecosystem, types.EcosystemPyPI)
+	}
+	if pkg.Name != "pytorch-lightning" {
+		t.Errorf("Name = %q, want normalised 'pytorch-lightning'", pkg.Name)
 	}
 }
 
@@ -450,13 +496,13 @@ func TestMergeOSVVulnerability(t *testing.T) {
 		},
 	}
 
-	mergeOSVVulnerability(packages, vuln1)
+	mergeOSVVulnerability(packages, vuln1, "npm")
 
 	if len(packages) != 1 {
 		t.Fatalf("Expected 1 package, got %d", len(packages))
 	}
-	if packages["test-pkg"].AdvisoryID != "GHSA-test-1234" {
-		t.Errorf("AdvisoryID = %q, want GHSA-test-1234", packages["test-pkg"].AdvisoryID)
+	if packages["npm:test-pkg"].AdvisoryID != "GHSA-test-1234" {
+		t.Errorf("AdvisoryID = %q, want GHSA-test-1234", packages["npm:test-pkg"].AdvisoryID)
 	}
 
 	// Second vulnerability for same package — should merge versions
@@ -470,13 +516,13 @@ func TestMergeOSVVulnerability(t *testing.T) {
 		},
 	}
 
-	mergeOSVVulnerability(packages, vuln2)
+	mergeOSVVulnerability(packages, vuln2, "npm")
 
 	if len(packages) != 1 {
 		t.Fatalf("Expected 1 package after merge, got %d", len(packages))
 	}
-	if len(packages["test-pkg"].Versions) != 2 {
-		t.Errorf("Expected 2 versions after merge, got %v", packages["test-pkg"].Versions)
+	if len(packages["npm:test-pkg"].Versions) != 2 {
+		t.Errorf("Expected 2 versions after merge, got %v", packages["npm:test-pkg"].Versions)
 	}
 }
 
@@ -495,7 +541,7 @@ func TestProcessZip(t *testing.T) {
 		"MAL-2025-0001.json": vuln,
 	})
 
-	packages, err := processZip(zipData)
+	packages, err := processZip(zipData, "npm")
 	if err != nil {
 		t.Fatalf("processZip() error = %v", err)
 	}
@@ -504,13 +550,13 @@ func TestProcessZip(t *testing.T) {
 		t.Fatalf("len(packages) = %d, want 1", len(packages))
 	}
 
-	if _, ok := packages["test-pkg"]; !ok {
-		t.Error("packages missing 'test-pkg'")
+	if _, ok := packages["npm:test-pkg"]; !ok {
+		t.Error("packages missing 'npm:test-pkg'")
 	}
 }
 
 func TestProcessZip_InvalidData(t *testing.T) {
-	_, err := processZip([]byte("not a zip"))
+	_, err := processZip([]byte("not a zip"), "npm")
 	if err == nil {
 		t.Error("processZip() expected error for invalid zip data")
 	}

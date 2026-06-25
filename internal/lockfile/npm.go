@@ -25,12 +25,13 @@ type npmLockfileJSON struct {
 }
 
 type npmPackageJSON struct {
-	Version   string            `json:"version"`
-	Resolved  string            `json:"resolved"`
-	Integrity string            `json:"integrity"`
-	Dev       bool              `json:"dev"`
-	Optional  bool              `json:"optional"`
-	Requires  map[string]string `json:"requires"`
+	Version          string            `json:"version"`
+	Resolved         string            `json:"resolved"`
+	Integrity        string            `json:"integrity"`
+	Dev              bool              `json:"dev"`
+	Optional         bool              `json:"optional"`
+	HasInstallScript bool              `json:"hasInstallScript"`
+	Requires         map[string]string `json:"requires"`
 }
 
 type npmDependencyJSON struct {
@@ -109,10 +110,12 @@ func parseNPMPackages(packages map[string]npmPackageJSON) []types.Dependency {
 		seen[key] = true
 
 		deps = append(deps, types.Dependency{
-			Name:     name,
-			Version:  pkg.Version,
-			Dev:      pkg.Dev,
-			Optional: pkg.Optional,
+			Name:             name,
+			Version:          pkg.Version,
+			Dev:              pkg.Dev,
+			Optional:         pkg.Optional,
+			Resolved:         pkg.Resolved,
+			HasInstallScript: pkg.HasInstallScript,
 		})
 	}
 
@@ -137,6 +140,7 @@ func parseNPMDependencies(dependencies map[string]npmDependencyJSON) []types.Dep
 			Version:  dep.Version,
 			Dev:      dep.Dev,
 			Optional: dep.Optional,
+			Resolved: dep.Resolved,
 		})
 
 		// Recursively process nested dependencies

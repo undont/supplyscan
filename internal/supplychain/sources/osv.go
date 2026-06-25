@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	// osvZipURL is the GCS URL for the npm ecosystem bulk zip containing all advisories.
-	osvZipURL = "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"
+	// osvNPMZipURL is the GCS URL for the npm ecosystem bulk zip.
+	osvNPMZipURL = "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"
+
+	// osvPyPIZipURL is the GCS URL for the PyPI ecosystem bulk zip.
+	osvPyPIZipURL = "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip"
 
 	// osvCacheTTL is the cache TTL for OSV data (12 hours).
 	osvCacheTTL = 12 * time.Hour
@@ -31,38 +34,60 @@ const (
 
 	// osvMalwarePrefix is the filename prefix for malware advisories in the zip.
 	osvMalwarePrefix = "MAL-"
+
+	// OSV ecosystem identifiers as they appear in the affected package data.
+	osvEcosystemNPM  = "npm"
+	osvEcosystemPyPI = "PyPI"
 )
 
-// OSVSource fetches malware advisories from the OSV.dev database via the
-// npm ecosystem bulk zip from the public GCS data bucket. It filters for
-// MAL- prefixed entries (malware advisories) and extracts package data.
+// OSVSource fetches malware advisories from the OSV.dev database via per-
+// ecosystem bulk zips from the public GCS data bucket. It filters for MAL-
+// prefixed entries (malware advisories) and extracts package data across the
+// npm and PyPI ecosystems, both of which the 2026 worm campaigns target.
 //
-// This approach downloads a single zip file instead of making thousands of
-// individual HTTP requests, which is dramatically faster when the bucket
-// contains hundreds of thousands of entries.
+// Downloading the bulk zips avoids making thousands of individual HTTP requests,
+// which is dramatically faster when the buckets contain hundreds of thousands of
+// entries.
 type OSVSource struct {
-	zipURL string
+	npmZipURL  string
+	pypiZipURL string
 }
 
 // OSVSourceOption configures an OSVSource.
 type OSVSourceOption func(*OSVSource)
 
-// WithOSVZipURL sets a custom zip URL (for testing).
+// WithOSVZipURL sets a custom npm zip URL and disables the PyPI fetch (for
+// single-ecosystem tests).
 func WithOSVZipURL(url string) OSVSourceOption {
 	return func(s *OSVSource) {
-		s.zipURL = url
+		s.npmZipURL = url
+		s.pypiZipURL = ""
+	}
+}
+
+// WithOSVPyPIZipURL sets a custom PyPI zip URL (for testing).
+func WithOSVPyPIZipURL(url string) OSVSourceOption {
+	return func(s *OSVSource) {
+		s.pypiZipURL = url
 	}
 }
 
 // NewOSVSource creates a new OSV.dev IOC source.
 func NewOSVSource(opts ...OSVSourceOption) *OSVSource {
 	s := &OSVSource{
-		zipURL: osvZipURL,
+		npmZipURL:  osvNPMZipURL,
+		pypiZipURL: osvPyPIZipURL,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+// ecosystemKey builds the per-source map key, scoped by ecosystem so npm and
+// PyPI packages of the same name don't collide within a single source.
+func ecosystemKey(ecosystem, name string) string {
+	return strings.ToLower(ecosystem) + ":" + name
 }
 
 // Name returns the source identifier.
@@ -75,17 +100,40 @@ func (s *OSVSource) CacheTTL() time.Duration {
 	return osvCacheTTL
 }
 
-// Fetch retrieves npm malware advisories by downloading the bulk ecosystem
-// zip and filtering for MAL- prefixed entries.
+// Fetch retrieves npm and PyPI malware advisories by downloading the bulk
+// ecosystem zips and filtering for MAL- prefixed entries.
 func (s *OSVSource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
-	zipData, err := s.downloadZip(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download OSV zip: %w", err)
+	ecosystems := []struct{ ecosystem, url string }{
+		{osvEcosystemNPM, s.npmZipURL},
+		{osvEcosystemPyPI, s.pypiZipURL},
 	}
 
-	packages, err := processZip(zipData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process OSV zip: %w", err)
+	packages := make(map[string]types.SourcePackage)
+	var fetched int
+
+	for _, e := range ecosystems {
+		if e.url == "" {
+			continue
+		}
+
+		zipData, err := s.downloadZip(ctx, client, e.url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download OSV %s zip: %w", e.ecosystem, err)
+		}
+
+		eco, err := processZip(zipData, e.ecosystem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process OSV %s zip: %w", e.ecosystem, err)
+		}
+
+		for k, v := range eco {
+			packages[k] = v
+		}
+		fetched++
+	}
+
+	if fetched == 0 {
+		return nil, fmt.Errorf("no OSV ecosystem zip URLs configured")
 	}
 
 	return &types.SourceData{
@@ -96,9 +144,9 @@ func (s *OSVSource) Fetch(ctx context.Context, client *http.Client) (*types.Sour
 	}, nil
 }
 
-// downloadZip fetches the bulk ecosystem zip from GCS.
-func (s *OSVSource) downloadZip(ctx context.Context, client *http.Client) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.zipURL, http.NoBody)
+// downloadZip fetches a bulk ecosystem zip from GCS.
+func (s *OSVSource) downloadZip(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -156,8 +204,9 @@ type osvEvent struct {
 	Fixed      string `json:"fixed"`
 }
 
-// processZip reads a zip archive and extracts malware advisory data from MAL- prefixed entries.
-func processZip(data []byte) (map[string]types.SourcePackage, error) {
+// processZip reads a zip archive and extracts malware advisory data from MAL-
+// prefixed entries for the given ecosystem.
+func processZip(data []byte, ecosystem string) (map[string]types.SourcePackage, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open zip: %w", err)
@@ -176,7 +225,7 @@ func processZip(data []byte) (map[string]types.SourcePackage, error) {
 			continue // skip individual entry errors
 		}
 
-		mergeOSVVulnerability(packages, vuln)
+		mergeOSVVulnerability(packages, vuln, ecosystem)
 	}
 
 	return packages, nil
@@ -198,14 +247,20 @@ func readZipEntry(file *zip.File) (*osvVulnerability, error) {
 	return &vuln, nil
 }
 
-// mergeOSVVulnerability extracts package data from an OSV entry and merges it into the packages map.
-func mergeOSVVulnerability(packages map[string]types.SourcePackage, vuln *osvVulnerability) {
+// mergeOSVVulnerability extracts package data from an OSV entry and merges it
+// into the packages map, keeping only entries for the requested ecosystem.
+func mergeOSVVulnerability(packages map[string]types.SourcePackage, vuln *osvVulnerability, ecosystem string) {
 	for _, affected := range vuln.Affected {
-		if affected.Package.Ecosystem != "npm" {
+		if affected.Package.Ecosystem != ecosystem {
 			continue
 		}
 
 		pkgName := affected.Package.Name
+		eco := strings.ToLower(ecosystem)
+		if eco == types.EcosystemPyPI {
+			pkgName = types.NormalizePyPIName(pkgName)
+		}
+		key := ecosystemKey(ecosystem, pkgName)
 		versions := extractOSVVersions(&affected)
 		advisoryID := vuln.ID
 
@@ -217,12 +272,13 @@ func mergeOSVVulnerability(packages map[string]types.SourcePackage, vuln *osvVul
 			}
 		}
 
-		if existing, ok := packages[pkgName]; ok {
+		if existing, ok := packages[key]; ok {
 			existing.Versions = mergeOSVVersions(existing.Versions, versions)
-			packages[pkgName] = existing
+			packages[key] = existing
 		} else {
-			packages[pkgName] = types.SourcePackage{
+			packages[key] = types.SourcePackage{
 				Name:       pkgName,
+				Ecosystem:  eco,
 				Versions:   versions,
 				AdvisoryID: advisoryID,
 				Severity:   "critical", // Malware defaults to critical

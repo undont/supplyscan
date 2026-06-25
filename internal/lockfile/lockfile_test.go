@@ -26,8 +26,11 @@ func TestIsLockfile(t *testing.T) {
 		{"pnpm-lock.yaml", true},
 		{"bun.lock", true},
 		{"deno.lock", true},
+		{"requirements.txt", true},
+		{"poetry.lock", true},
 		{"package.json", false},
 		{"yarn.lock.bak", false},
+		{"requirements-dev.txt", false},
 		{"random.json", false},
 		{"", false},
 	}

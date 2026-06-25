@@ -454,7 +454,7 @@ func TestCheckPackage(t *testing.T) {
 	}
 
 	// Test with a known safe package (this won't check real vulnerabilities in tests)
-	result, err := scanner.CheckPackage("lodash", "4.17.21")
+	result, err := scanner.CheckPackage(types.EcosystemNPM, "lodash", "4.17.21")
 	if err != nil {
 		t.Fatalf("CheckPackage() error = %v", err)
 	}

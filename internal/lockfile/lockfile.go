@@ -37,6 +37,10 @@ func DetectAndParse(path string) (Lockfile, error) {
 		return parseBun(path)
 	case "deno.lock":
 		return parseDeno(path)
+	case "requirements.txt":
+		return parseRequirements(path)
+	case "poetry.lock":
+		return parsePoetry(path)
 	default:
 		return nil, errUnknownFormat
 	}
@@ -103,7 +107,8 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 func isLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
-		"pnpm-lock.yaml", "bun.lock", "deno.lock":
+		"pnpm-lock.yaml", "bun.lock", "deno.lock",
+		"requirements.txt", "poetry.lock":
 		return true
 	default:
 		return false
