@@ -7,19 +7,25 @@ import (
 
 // severity buckets, sharing npm's vocabulary ("moderate" for CVSS medium).
 // CVSS sources only ever give us a score or a textual label; both map here.
+const (
+	severityCritical = "critical"
+	severityHigh     = "high"
+	severityModerate = "moderate"
+	severityLow      = "low"
+)
 
 // severityFromLabel maps a textual severity (OSV database_specific.severity,
 // GitHub advisory severity) onto our vocabulary. Returns "" if unrecognised.
 func severityFromLabel(label string) string {
 	switch strings.ToLower(strings.TrimSpace(label)) {
 	case "critical":
-		return "critical"
+		return severityCritical
 	case "high":
-		return "high"
+		return severityHigh
 	case "moderate", "medium":
-		return "moderate"
+		return severityModerate
 	case "low":
-		return "low"
+		return severityLow
 	default:
 		return ""
 	}
@@ -31,13 +37,13 @@ func severityFromScore(score float64) string {
 	case score <= 0:
 		return ""
 	case score < 4.0:
-		return "low"
+		return severityLow
 	case score < 7.0:
-		return "moderate"
+		return severityModerate
 	case score < 9.0:
-		return "high"
+		return severityHigh
 	default:
-		return "critical"
+		return severityCritical
 	}
 }
 

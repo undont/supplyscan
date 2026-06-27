@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -308,13 +309,7 @@ func TestRunStatus_JSON(t *testing.T) {
 	// Verify specific lockfiles are supported
 	expected := []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
 	for _, lf := range expected {
-		found := false
-		for _, supported := range status.SupportedLockfiles {
-			if supported == lf {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(status.SupportedLockfiles, lf)
 		if !found {
 			t.Errorf("Expected %q in supported lockfiles", lf)
 		}
@@ -570,7 +565,7 @@ func TestPrintJSON(t *testing.T) {
 	})
 
 	// Verify it's valid JSON
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		t.Errorf("Output is not valid JSON: %v", err)
 	}
@@ -1085,8 +1080,7 @@ func BenchmarkPrintJSON(b *testing.B) {
 	old := os.Stdout
 	os.Stdout, _ = os.Open(os.DevNull)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		printJSON(data)
 	}
 
