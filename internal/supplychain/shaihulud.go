@@ -89,15 +89,35 @@ func (d *Detector) Refresh(force bool) (*types.RefreshResult, error) {
 	return d.aggregator.refresh(ctx, force)
 }
 
+// normalizeEcosystem maps an empty ecosystem to npm (the historical default)
+// and lowercases the rest so keys are stable.
+func normalizeEcosystem(ecosystem string) string {
+	if ecosystem == "" {
+		return types.EcosystemNPM
+	}
+	return strings.ToLower(ecosystem)
+}
+
+// iocKey builds the ecosystem-scoped key used in the IOC database. Package names
+// collide across registries, so lookups must include the ecosystem. PyPI names
+// are normalised per PEP 503 so lockfile and IOC names line up.
+func iocKey(ecosystem, name string) string {
+	eco := normalizeEcosystem(ecosystem)
+	if eco == types.EcosystemPyPI {
+		name = types.NormalizePyPIName(name)
+	}
+	return eco + ":" + name
+}
+
 // CheckPackage checks a single package for supply chain compromise.
-func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding {
+func (d *Detector) CheckPackage(ecosystem, name, version string) *types.SupplyChainFinding {
 	db := d.aggregator.getDatabase()
 
 	if db == nil {
 		return nil
 	}
 
-	pkg, exists := db.Packages[name]
+	pkg, exists := db.Packages[iocKey(ecosystem, name)]
 	if !exists {
 		return nil
 	}
@@ -129,7 +149,12 @@ func (d *Detector) CheckPackage(name, version string) *types.SupplyChainFinding 
 }
 
 // checkNamespace checks if a package is from an at-risk namespace.
-func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarning {
+// Namespaces (npm scopes) are an npm concept, so this only applies to npm.
+func (d *Detector) checkNamespace(ecosystem, name, version string) *types.SupplyChainWarning {
+	if normalizeEcosystem(ecosystem) != types.EcosystemNPM {
+		return nil
+	}
+
 	campaign, ok := lookupNamespaceCampaign(name)
 	if !ok {
 		return nil
@@ -139,7 +164,7 @@ func (d *Detector) checkNamespace(name, version string) *types.SupplyChainWarnin
 
 	// Only warn if the package isn't already known to be compromised
 	if db != nil {
-		if pkg, exists := db.Packages[name]; exists {
+		if pkg, exists := db.Packages[iocKey(ecosystem, name)]; exists {
 			for _, v := range pkg.Versions {
 				if versionMatches(v, version) {
 					return nil // Already reported as finding
@@ -166,13 +191,13 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 
 	for _, dep := range deps {
 		// Check for compromised package
-		if finding := d.CheckPackage(dep.Name, dep.Version); finding != nil {
+		if finding := d.CheckPackage(dep.Ecosystem, dep.Name, dep.Version); finding != nil {
 			findings = append(findings, *finding)
 			continue
 		}
 
 		// Check for at-risk namespace
-		if warning := d.checkNamespace(dep.Name, dep.Version); warning != nil {
+		if warning := d.checkNamespace(dep.Ecosystem, dep.Name, dep.Version); warning != nil {
 			warnings = append(warnings, *warning)
 		}
 	}

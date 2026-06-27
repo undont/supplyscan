@@ -39,12 +39,13 @@ func Run(scan scanner.Scanner, args []string) {
 	case "scan":
 		dispatchScan(scan, args)
 	case "check":
-		if len(args) < 3 {
+		pkg, version, ecosystem, ok := parseCheckArgs(args[1:])
+		if !ok {
 			printStyledError("check requires package and version arguments")
 			exitFunc(1)
 			return
 		}
-		runCheck(scan, args[1], args[2])
+		runCheck(scan, ecosystem, pkg, version)
 	case "refresh":
 		force := len(args) > 1 && args[1] == "--force"
 		runRefresh(scan, force)
@@ -84,7 +85,7 @@ func parseGlobalFlags(args []string) []string {
 }
 
 func printUsage() {
-	fmt.Println(headerStyle.Render("supplyscan") + " - JavaScript ecosystem security scanner")
+	fmt.Println(headerStyle.Render("supplyscan") + " - JavaScript and Python supply-chain scanner")
 	fmt.Println()
 	fmt.Println(formatSection("Usage"))
 	fmt.Println("  supplyscan <command> [options]    Run CLI commands (default)")
@@ -94,6 +95,7 @@ func printUsage() {
 	fmt.Println("  status                            Show scanner version and database info")
 	fmt.Println("  scan [path] [--recursive]         Scan a project for vulnerabilities (default: .)")
 	fmt.Println("  check <package> <version>         Check a single package@version")
+	fmt.Println("    [--ecosystem npm|pypi]          Registry to check against (default: npm)")
 	fmt.Println("  refresh [--force]                 Update IOC database from upstream")
 	fmt.Println()
 	fmt.Println(formatSection("Flags"))
@@ -104,6 +106,46 @@ type scanOptions struct {
 	Recursive  bool
 	IncludeDev bool
 	JSON       bool
+}
+
+// parseCheckArgs extracts the package, version and ecosystem from check args.
+// The ecosystem comes from "--ecosystem <value>" / "--ecosystem=<value>" (or the
+// "-e" short form) and defaults to npm; the two positional args are package and
+// version.
+func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
+	ecosystem = types.EcosystemNPM
+	var positional []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--ecosystem" || arg == "-e":
+			if i+1 >= len(args) {
+				return "", "", "", false
+			}
+			i++
+			ecosystem = normalizeCheckEcosystem(args[i])
+		case strings.HasPrefix(arg, "--ecosystem="):
+			ecosystem = normalizeCheckEcosystem(strings.TrimPrefix(arg, "--ecosystem="))
+		default:
+			positional = append(positional, arg)
+		}
+	}
+
+	if len(positional) < 2 {
+		return "", "", "", false
+	}
+	return positional[0], positional[1], ecosystem, true
+}
+
+// normalizeCheckEcosystem maps user-facing ecosystem aliases onto internal ids.
+func normalizeCheckEcosystem(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "pypi", "python", "pip":
+		return types.EcosystemPyPI
+	default:
+		return types.EcosystemNPM
+	}
 }
 
 func parseScanFlags(args []string) scanOptions {
@@ -235,6 +277,7 @@ func printScanResult(result *types.ScanResult) {
 	printIssuesSummary(&result.Summary.Issues)
 	printSupplyChainFindings(result.SupplyChain.Findings)
 	printSupplyChainWarnings(result.SupplyChain.Warnings)
+	printSupplyChainAdvisories(result.SupplyChain.Advisories)
 	printVulnerabilities(result.Vulnerabilities.Findings)
 	printLockfiles(result.Lockfiles)
 	printScanTiming(result.Timing)
@@ -344,6 +387,48 @@ func printSupplyChainWarnings(warnings []types.SupplyChainWarning) {
 	fmt.Println()
 }
 
+// printSupplyChainAdvisories renders heuristic advisories. Suspicious-unicode
+// flags are rare and serious, so each is shown individually; install-script
+// flags are common and benign in aggregate, so they're collapsed into a single
+// inventory line plus the package list.
+func printSupplyChainAdvisories(advisories []types.SupplyChainAdvisory) {
+	if len(advisories) == 0 {
+		return
+	}
+
+	var unicodeFlags, installFlags []types.SupplyChainAdvisory
+	for i := range advisories {
+		switch advisories[i].Type {
+		case "suspicious_unicode":
+			unicodeFlags = append(unicodeFlags, advisories[i])
+		case "install_script":
+			installFlags = append(installFlags, advisories[i])
+		}
+	}
+
+	if len(unicodeFlags) > 0 {
+		fmt.Println(formatSection("Heads up — suspicious package names"))
+		for i := range unicodeFlags {
+			a := &unicodeFlags[i]
+			fmt.Printf("  %s %s\n", infoStyle.Render(infoMark), formatPackageVersion(a.Package, a.InstalledVersion))
+			if a.Detail != "" {
+				fmt.Printf("      %s %s\n", formatMuted(bullet), formatMuted(a.Detail))
+			}
+		}
+		fmt.Println()
+	}
+
+	if len(installFlags) > 0 {
+		fmt.Println(formatSection(fmt.Sprintf("Heads up — %d package(s) run install scripts", len(installFlags))))
+		fmt.Printf("  %s\n", formatMuted("Informational only. Install scripts are common; review if any are unexpected."))
+		for i := range installFlags {
+			a := &installFlags[i]
+			fmt.Printf("  %s %s\n", formatMuted(bullet), formatMuted(fmt.Sprintf("%s@%s", a.Package, a.InstalledVersion)))
+		}
+		fmt.Println()
+	}
+}
+
 func printVulnerabilities(vulnFindings []types.VulnerabilityFinding) {
 	if len(vulnFindings) == 0 {
 		return
@@ -379,8 +464,8 @@ func printLockfiles(lockfiles []types.LockfileInfo) {
 	}
 }
 
-func runCheck(scan scanner.Scanner, pkg, version string) {
-	result, err := scan.CheckPackage(pkg, version)
+func runCheck(scan scanner.Scanner, ecosystem, pkg, version string) {
+	result, err := scan.CheckPackage(ecosystem, pkg, version)
 	if err != nil {
 		printStyledError("%v", err)
 		exitFunc(1)

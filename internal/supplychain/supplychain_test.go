@@ -67,6 +67,7 @@ func createTestDetectorWithDB(t *testing.T, db *types.IOCDatabase) *Detector {
 		pkg := db.Packages[name]
 		sourcePackages[name] = types.SourcePackage{
 			Name:       pkg.Name,
+			Ecosystem:  pkg.Ecosystem,
 			Versions:   pkg.Versions,
 			AdvisoryID: "",
 			Severity:   "critical",
@@ -180,7 +181,7 @@ func TestDetector_CheckPackage_Compromised(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			finding := detector.CheckPackage(tt.pkgName, tt.version)
+			finding := detector.CheckPackage(types.EcosystemNPM, tt.pkgName, tt.version)
 			got := finding != nil
 			if got != tt.want {
 				t.Errorf("CheckPackage(%q, %q) returned finding = %v, want %v", tt.pkgName, tt.version, got, tt.want)
@@ -201,6 +202,71 @@ func TestDetector_CheckPackage_Compromised(t *testing.T) {
 	}
 }
 
+func TestDetector_CheckPackage_EcosystemScoped(t *testing.T) {
+	// Same package name in both registries, compromised at different versions.
+	// Matching must be scoped by ecosystem so npm and PyPI don't cross-fire.
+	db := &types.IOCDatabase{
+		Packages: map[string]types.CompromisedPackage{
+			"npm:requests": {
+				Name:      "requests",
+				Ecosystem: types.EcosystemNPM,
+				Versions:  []string{"1.0.0"},
+				Campaigns: []string{"shai_hulud_v2"},
+			},
+			"pypi:requests": {
+				Name:      "requests",
+				Ecosystem: types.EcosystemPyPI,
+				Versions:  []string{"2.0.0"},
+				Campaigns: []string{"teampcp"},
+			},
+		},
+		LastUpdated: time.Now().UTC().Format(time.RFC3339),
+	}
+	detector := createTestDetectorWithDB(t, db)
+
+	tests := []struct {
+		name      string
+		ecosystem string
+		version   string
+		want      bool
+	}{
+		{"npm match", types.EcosystemNPM, "1.0.0", true},
+		{"pypi match", types.EcosystemPyPI, "2.0.0", true},
+		{"npm version is pypi's compromised version", types.EcosystemNPM, "2.0.0", false},
+		{"pypi version is npm's compromised version", types.EcosystemPyPI, "1.0.0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			finding := detector.CheckPackage(tt.ecosystem, "requests", tt.version)
+			if (finding != nil) != tt.want {
+				t.Errorf("CheckPackage(%q, requests, %q) = %v, want match=%v",
+					tt.ecosystem, tt.version, finding, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetector_CheckPackage_PyPINameNormalisation(t *testing.T) {
+	db := &types.IOCDatabase{
+		Packages: map[string]types.CompromisedPackage{
+			"pypi:pytorch-lightning": {
+				Name:      "pytorch-lightning",
+				Ecosystem: types.EcosystemPyPI,
+				Versions:  []string{"1.9.0"},
+				Campaigns: []string{"teampcp"},
+			},
+		},
+		LastUpdated: time.Now().UTC().Format(time.RFC3339),
+	}
+	detector := createTestDetectorWithDB(t, db)
+
+	// the lockfile-side name "PyTorch_Lightning" must normalise to match
+	if finding := detector.CheckPackage(types.EcosystemPyPI, "PyTorch_Lightning", "1.9.0"); finding == nil {
+		t.Error("expected un-normalised PyPI name to match after PEP 503 normalisation")
+	}
+}
+
 func TestDetector_CheckPackage_NilDatabase(t *testing.T) {
 	// Create detector with a source that returns nil data
 	emptySource := &mockTestSource{
@@ -218,7 +284,7 @@ func TestDetector_CheckPackage_NilDatabase(t *testing.T) {
 	}
 
 	// Don't call EnsureLoaded - database should be nil
-	finding := detector.CheckPackage("any-package", "1.0.0")
+	finding := detector.CheckPackage(types.EcosystemNPM, "any-package", "1.0.0")
 	if finding != nil {
 		t.Error("Expected nil finding when database is nil")
 	}
@@ -246,7 +312,7 @@ func TestDetector_CheckNamespace(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			warning := detector.checkNamespace(tt.pkgName, tt.version)
+			warning := detector.checkNamespace(types.EcosystemNPM, tt.pkgName, tt.version)
 			got := warning != nil
 			if got != tt.want {
 				t.Errorf("CheckNamespace(%q, %q) returned warning = %v, want %v", tt.pkgName, tt.version, got, tt.want)
@@ -389,7 +455,7 @@ func TestNewDetector_WithCustomSources(t *testing.T) {
 	}
 
 	// Check package should work
-	finding := detector.CheckPackage("test-pkg", "1.0.0")
+	finding := detector.CheckPackage(types.EcosystemNPM, "test-pkg", "1.0.0")
 	if finding == nil {
 		t.Error("Expected finding for test-pkg@1.0.0")
 	}
@@ -483,12 +549,12 @@ func TestDetector_CheckPackage_WildcardVersion(t *testing.T) {
 	detector := createTestDetectorWithDB(t, db)
 
 	// Any version should be flagged
-	finding := detector.CheckPackage("typosquat-pkg", "1.0.0")
+	finding := detector.CheckPackage(types.EcosystemNPM, "typosquat-pkg", "1.0.0")
 	if finding == nil {
 		t.Error("Expected finding for typosquat-pkg@1.0.0 (all versions compromised)")
 	}
 
-	finding2 := detector.CheckPackage("typosquat-pkg", "99.99.99")
+	finding2 := detector.CheckPackage(types.EcosystemNPM, "typosquat-pkg", "99.99.99")
 	if finding2 == nil {
 		t.Error("Expected finding for typosquat-pkg@99.99.99 (all versions compromised)")
 	}
@@ -545,7 +611,7 @@ func TestDetector_EnsureLoaded(t *testing.T) {
 	}
 
 	// Should be able to check packages now
-	finding := detector.CheckPackage("loaded-pkg", "1.0.0")
+	finding := detector.CheckPackage(types.EcosystemNPM, "loaded-pkg", "1.0.0")
 	if finding == nil {
 		t.Error("Expected finding for loaded-pkg@1.0.0")
 	}

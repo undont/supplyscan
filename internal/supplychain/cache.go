@@ -166,6 +166,16 @@ func (c *multiSourceCache) loadMerged() (*types.IOCDatabase, error) {
 		return nil, err
 	}
 
+	// Rekey by ecosystem-scoped key. This upgrades older caches that were keyed
+	// by bare package name (those entries have an empty Ecosystem, which
+	// normalises to npm) and is a no-op for caches already keyed this way.
+	rekeyed := make(map[string]types.CompromisedPackage, len(db.Packages))
+	for k := range db.Packages {
+		pkg := db.Packages[k]
+		rekeyed[iocKey(pkg.Ecosystem, pkg.Name)] = pkg
+	}
+	db.Packages = rekeyed
+
 	return &db, nil
 }
 

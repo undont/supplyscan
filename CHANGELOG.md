@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add PyPI / Python ecosystem support: parse `requirements.txt`, `poetry.lock`, `Pipfile.lock`, `uv.lock`, and `pdm.lock`, with PEP 503 name normalisation
+- Scope IOC matching by ecosystem (`npm` vs `pypi`) so same-named packages across registries don't collide; existing caches rekey on load
+- Widen the OSV.dev IOC source to pull the PyPI bulk zip alongside npm
+- Add cross-ecosystem vulnerability auditing via OSV.dev querybatch for non-npm dependencies (npm stays on the npm audit API), with CVSS v3 severity mapping
+- Add an `ecosystem` argument to the `check` command (`--ecosystem npm|pypi` / `-e`) and the `supplyscan_check` MCP tool
+- Add advisory-only heuristics: flag packages that run install scripts and invisible / non-ASCII characters in package names or resolved URLs
 - Add `supplyscan .` shorthand for scanning the current directory (equivalent to `supplyscan scan .`)
 
 ## [1.12.1](https://github.com/seanhalberthal/supplyscan/compare/v1.12.0...v1.12.1)

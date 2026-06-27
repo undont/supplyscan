@@ -1,4 +1,4 @@
-// Package lockfile provides parsers for various JavaScript lockfile formats.
+// Package lockfile provides parsers for various JavaScript and Python lockfile formats.
 package lockfile
 
 import (
@@ -37,6 +37,16 @@ func DetectAndParse(path string) (Lockfile, error) {
 		return parseBun(path)
 	case "deno.lock":
 		return parseDeno(path)
+	case "requirements.txt":
+		return parseRequirements(path)
+	case "poetry.lock":
+		return parsePoetry(path)
+	case "Pipfile.lock":
+		return parsePipfile(path)
+	case "uv.lock":
+		return parseUv(path)
+	case "pdm.lock":
+		return parsePdm(path)
 	default:
 		return nil, errUnknownFormat
 	}
@@ -103,7 +113,9 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 func isLockfile(filename string) bool {
 	switch filename {
 	case "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
-		"pnpm-lock.yaml", "bun.lock", "deno.lock":
+		"pnpm-lock.yaml", "bun.lock", "deno.lock",
+		"requirements.txt", "poetry.lock", "Pipfile.lock",
+		"uv.lock", "pdm.lock":
 		return true
 	default:
 		return false

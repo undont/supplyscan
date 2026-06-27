@@ -433,7 +433,7 @@ jobs:
           # Write formula directly with variable substitution (no sed placeholders)
           cat > Formula/supplyscan.rb << FORMULA
           class Supplyscan < Formula
-            desc "Security scanner for JavaScript lockfiles — detects supply chain compromises and vulnerabilities"
+            desc "Security scanner for JavaScript and Python lockfiles — detects supply chain compromises and vulnerabilities"
             homepage "https://github.com/undont/supplyscan"
             version "${version}"
             license "MIT"

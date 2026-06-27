@@ -2,9 +2,28 @@
 package types
 
 import (
+	"regexp"
 	"runtime/debug"
 	"strings"
 )
+
+// Ecosystem identifies the package registry a dependency belongs to. Package
+// names collide across registries (both npm and PyPI ship a "requests", "six",
+// etc.) so IOC matching must be scoped by ecosystem, not name alone.
+const (
+	EcosystemNPM  = "npm"
+	EcosystemPyPI = "pypi"
+)
+
+// pypiNameSep matches runs of the characters PEP 503 treats as equivalent.
+var pypiNameSep = regexp.MustCompile(`[-_.]+`)
+
+// NormalizePyPIName applies PEP 503 normalisation: lowercase and collapse any
+// run of "-", "_" or "." into a single "-". OSV stores PyPI names normalised,
+// so we normalise lockfile names the same way for matching to line up.
+func NormalizePyPIName(name string) string {
+	return pypiNameSep.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
+}
 
 // Version is the application version. Set at build time via -ldflags.
 // Falls back to module version from go install, or "dev" for local builds.
@@ -24,10 +43,13 @@ func init() {
 
 // Dependency represents a single package dependency from a lockfile.
 type Dependency struct {
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Dev      bool   `json:"dev,omitempty"`
-	Optional bool   `json:"optional,omitempty"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	Ecosystem        string `json:"ecosystem,omitempty"` // "npm" (default when empty) or "pypi"
+	Dev              bool   `json:"dev,omitempty"`
+	Optional         bool   `json:"optional,omitempty"`
+	Resolved         string `json:"resolved,omitempty"`           // resolved download URL, when the lockfile records one
+	HasInstallScript bool   `json:"has_install_script,omitempty"` // runs a lifecycle/install script (npm)
 }
 
 // LockfileInfo contains metadata about a parsed lockfile.
@@ -45,11 +67,17 @@ var SupportedLockfiles = []string{
 	"pnpm-lock.yaml",
 	"bun.lock",
 	"deno.lock",
+	"requirements.txt",
+	"poetry.lock",
+	"Pipfile.lock",
+	"uv.lock",
+	"pdm.lock",
 }
 
 // CompromisedPackage represents a known malicious package from IOC data.
 type CompromisedPackage struct {
 	Name        string   `json:"name"`
+	Ecosystem   string   `json:"ecosystem,omitempty"` // "npm" (default when empty) or "pypi"
 	Versions    []string `json:"versions"`
 	Sources     []string `json:"sources"`
 	Campaigns   []string `json:"campaigns,omitempty"`    // Multiple campaigns that flagged this package
@@ -122,8 +150,23 @@ type ScanResult struct {
 
 // SupplyChainResult contains all supply chain findings.
 type SupplyChainResult struct {
-	Findings []SupplyChainFinding `json:"findings"`
-	Warnings []SupplyChainWarning `json:"warnings"`
+	Findings   []SupplyChainFinding  `json:"findings"`
+	Warnings   []SupplyChainWarning  `json:"warnings"`
+	Advisories []SupplyChainAdvisory `json:"advisories,omitempty"`
+}
+
+// SupplyChainAdvisory is a low-noise heuristic flag that complements IOC
+// matching. It is advisory only and does not affect exit status: the package
+// isn't known-compromised, but it carries a trait worth a human glance (an
+// install script, or non-ASCII/invisible characters in its name or URL).
+type SupplyChainAdvisory struct {
+	Type             string `json:"type"` // "install_script" | "suspicious_unicode"
+	Package          string `json:"package"`
+	InstalledVersion string `json:"installed_version"`
+	Ecosystem        string `json:"ecosystem,omitempty"`
+	Detail           string `json:"detail,omitempty"` // e.g. the offending codepoint
+	Note             string `json:"note"`
+	Lockfile         string `json:"lockfile,omitempty"`
 }
 
 // VulnerabilityResult contains all vulnerability findings.
@@ -231,8 +274,12 @@ type SourceData struct {
 
 // SourcePackage represents a compromised package from a single source.
 type SourcePackage struct {
-	// Name is the npm package name (e.g., "lodash", "@ctrl/tinycolor").
+	// Name is the package name (e.g., "lodash", "@ctrl/tinycolor", "litellm").
 	Name string `json:"name"`
+
+	// Ecosystem is the registry the package belongs to ("npm" or "pypi").
+	// Empty is treated as "npm" for backwards compatibility.
+	Ecosystem string `json:"ecosystem,omitempty"`
 
 	// Versions lists the compromised versions.
 	Versions []string `json:"versions"`

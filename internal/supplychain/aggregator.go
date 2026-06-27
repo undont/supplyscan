@@ -405,19 +405,23 @@ func (a *aggregator) mergeSourceData(sources []*types.SourceData) *types.IOCData
 }
 
 // mergeSourceIntoPackages merges a single source's packages into the packages map.
+// The merged key is ecosystem-scoped so npm and PyPI packages of the same name
+// don't collide.
 func (a *aggregator) mergeSourceIntoPackages(packages map[string]types.CompromisedPackage, src *types.SourceData) {
-	for name, pkg := range src.Packages {
-		if existing, ok := packages[name]; ok {
-			a.mergeExistingPackage(&existing, src, pkg)
-			packages[name] = existing
+	for key := range src.Packages {
+		pkg := src.Packages[key]
+		mergedKey := iocKey(pkg.Ecosystem, pkg.Name)
+		if existing, ok := packages[mergedKey]; ok {
+			a.mergeExistingPackage(&existing, src, &pkg)
+			packages[mergedKey] = existing
 		} else {
-			packages[name] = a.createNewPackage(name, src, pkg)
+			packages[mergedKey] = a.createNewPackage(pkg.Name, src, &pkg)
 		}
 	}
 }
 
 // mergeExistingPackage merges a package from a new source with an existing package.
-func (a *aggregator) mergeExistingPackage(existing *types.CompromisedPackage, src *types.SourceData, pkg types.SourcePackage) {
+func (a *aggregator) mergeExistingPackage(existing *types.CompromisedPackage, src *types.SourceData, pkg *types.SourcePackage) {
 	existing.Versions = uniqueStrings(append(existing.Versions, pkg.Versions...))
 	existing.Sources = uniqueStrings(append(existing.Sources, src.Source))
 	if src.Campaign != "" {
@@ -433,7 +437,7 @@ func (a *aggregator) mergeExistingPackage(existing *types.CompromisedPackage, sr
 }
 
 // createNewPackage creates a new compromised package from source data.
-func (a *aggregator) createNewPackage(name string, src *types.SourceData, pkg types.SourcePackage) types.CompromisedPackage {
+func (a *aggregator) createNewPackage(name string, src *types.SourceData, pkg *types.SourcePackage) types.CompromisedPackage {
 	var campaigns []string
 	if src.Campaign != "" {
 		campaigns = []string{src.Campaign}
@@ -444,6 +448,7 @@ func (a *aggregator) createNewPackage(name string, src *types.SourceData, pkg ty
 	}
 	return types.CompromisedPackage{
 		Name:        name,
+		Ecosystem:   normalizeEcosystem(pkg.Ecosystem),
 		Versions:    pkg.Versions,
 		Sources:     []string{src.Source},
 		Campaigns:   campaigns,

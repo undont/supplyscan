@@ -25,7 +25,7 @@ func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
 	return m.scanResult, m.scanErr
 }
 
-func (m *mockScanner) CheckPackage(_, _ string) (*types.CheckResult, error) {
+func (m *mockScanner) CheckPackage(_, _, _ string) (*types.CheckResult, error) {
 	return m.checkResult, m.checkErr
 }
 

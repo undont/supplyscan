@@ -127,7 +127,7 @@ func buildBulkRequest(deps []types.Dependency) bulkRequest {
 }
 
 // doBulkAudit makes the HTTP request to the npm bulk advisory API.
-func (c *Client) doBulkAudit(req bulkRequest, deps []types.Dependency) (bulkResponse, error) {
+func (c *Client) doBulkAudit(req bulkRequest, _ []types.Dependency) (bulkResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal audit request: %w", err)
@@ -243,7 +243,7 @@ func isVersionVulnerable(version string, constraint *semver.Constraints) bool {
 func normaliseSeverity(s string) string {
 	s = strings.ToLower(s)
 	switch s {
-	case "critical", "high", "moderate", "low", "info":
+	case severityCritical, severityHigh, severityModerate, severityLow, "info":
 		return s
 	default:
 		return "unknown"
