@@ -87,14 +87,17 @@ func (s *GitHubAdvisorySource) CacheTTL() time.Duration {
 // internal ecosystem id.
 func (s *GitHubAdvisorySource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
 	packages := make(map[string]types.SourcePackage)
+	partial := false
 
 	for _, eco := range ghEcosystems {
 		cursor := ""
 		for {
 			advisories, nextCursor, err := s.fetchPage(ctx, client, cursor, eco.query)
 			if err != nil {
-				// If we have some data, return it even if pagination failed
+				// If we have some data, return it even if pagination failed, but
+				// mark it partial so it isn't cached as an authoritative full set.
 				if len(packages) > 0 {
+					partial = true
 					break
 				}
 				return nil, err
@@ -118,6 +121,7 @@ func (s *GitHubAdvisorySource) Fetch(ctx context.Context, client *http.Client) (
 		Campaign:  gitHubCampaign,
 		Packages:  packages,
 		FetchedAt: time.Now().UTC().Format(time.RFC3339),
+		Partial:   partial,
 	}, nil
 }
 

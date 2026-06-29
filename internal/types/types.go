@@ -310,6 +310,11 @@ type SourceData struct {
 
 	// FetchedAt is when this data was retrieved.
 	FetchedAt string `json:"fetched_at"`
+
+	// Partial is set when the fetch returned an incomplete result (e.g. pagination
+	// failed midway). Partial data is still usable for the current run but must not
+	// be cached as authoritative.
+	Partial bool `json:"-"`
 }
 
 // SourcePackage represents a compromised package from a single source.

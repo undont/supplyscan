@@ -2,6 +2,7 @@ package lockfile
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path"
 	"strings"
@@ -10,6 +11,24 @@ import (
 
 	"github.com/undont/supplyscan/internal/jsonc"
 )
+
+// maxManifestBytes caps how much of a workspace declaration file is read into
+// memory. Real package.json/pyproject.toml/pnpm-workspace.yaml files are tiny;
+// the cap guards against a scanned project planting a huge file to exhaust memory.
+const maxManifestBytes = 16 << 20 // 16 MiB
+
+// readManifestFile reads a workspace declaration file, refusing ones larger than
+// maxManifestBytes.
+func readManifestFile(file string) ([]byte, error) {
+	info, err := os.Stat(file)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxManifestBytes {
+		return nil, errors.New("manifest too large")
+	}
+	return os.ReadFile(file)
+}
 
 // workspace declaration filenames that live alongside a lockfile but are not
 // lockfiles themselves. package.json (npm/yarn/bun) and pyproject.toml (uv) are
@@ -50,7 +69,7 @@ func (s *dirState) pyWorkspaceGlobs() []string {
 // The field is either an array of globs or yarn's object form
 // {"packages": [...], "nohoist": [...]}.
 func packageJSONWorkspaceGlobs(manifest string) []string {
-	data, err := os.ReadFile(manifest)
+	data, err := readManifestFile(manifest)
 	if err != nil {
 		return nil
 	}
@@ -75,7 +94,7 @@ func packageJSONWorkspaceGlobs(manifest string) []string {
 
 // pnpmWorkspaceGlobs extracts the "packages" globs from a pnpm-workspace.yaml.
 func pnpmWorkspaceGlobs(file string) []string {
-	data, err := os.ReadFile(file)
+	data, err := readManifestFile(file)
 	if err != nil {
 		return nil
 	}
@@ -92,7 +111,7 @@ func pnpmWorkspaceGlobs(file string) []string {
 // Deno lists explicit member directories rather than globs; the leading "./" is
 // stripped so they match like a plain path glob.
 func denoWorkspaceGlobs(file string) []string {
-	data, err := os.ReadFile(file)
+	data, err := readManifestFile(file)
 	if err != nil {
 		return nil
 	}
@@ -116,7 +135,7 @@ func denoWorkspaceGlobs(file string) []string {
 // matching the convention in pytoml.go; single- and multi-line arrays are both
 // handled.
 func uvWorkspaceGlobs(manifest string) []string {
-	data, err := os.ReadFile(manifest)
+	data, err := readManifestFile(manifest)
 	if err != nil {
 		return nil
 	}
@@ -140,12 +159,18 @@ func uvWorkspaceGlobs(manifest string) []string {
 		if key != "members" && key != "exclude" {
 			continue
 		}
-		rawArray := strings.TrimSpace(val)
-		for !strings.Contains(rawArray, "]") && i+1 < len(lines) {
+		var b strings.Builder
+		val = strings.TrimSpace(val)
+		b.WriteString(val)
+		closed := strings.Contains(val, "]")
+		for !closed && i+1 < len(lines) {
 			i++
-			rawArray += " " + strings.TrimSpace(lines[i])
+			seg := strings.TrimSpace(lines[i])
+			b.WriteByte(' ')
+			b.WriteString(seg)
+			closed = strings.Contains(seg, "]")
 		}
-		for _, item := range tomlStringArray(rawArray) {
+		for _, item := range tomlStringArray(b.String()) {
 			if key == "exclude" {
 				globs = append(globs, "!"+item)
 			} else {
@@ -189,17 +214,37 @@ func globsMatch(globs []string, rel string) bool {
 	return matched
 }
 
+// doubleStar is the glob segment spanning zero or more path segments.
+const doubleStar = "**"
+
+// maxDoubleStars caps the number of "**" segments evaluated in a single glob.
+// Real workspace patterns use at most one; the cap bounds the recursive matcher
+// so an adversarial pattern (many non-trailing "**") in a scanned project cannot
+// trigger exponential backtracking.
+const maxDoubleStars = 4
+
 // matchGlob matches a workspace glob against a slash-separated path. It supports
 // "*" and character classes within a single segment (via path.Match) plus "**"
-// spanning zero or more segments.
+// spanning zero or more segments. Patterns exceeding maxDoubleStars "**" segments
+// are refused (no match) rather than evaluated.
 func matchGlob(pattern, name string) bool {
 	pattern = strings.TrimSuffix(pattern, "/")
-	return matchSegments(strings.Split(pattern, "/"), strings.Split(name, "/"))
+	pat := strings.Split(pattern, "/")
+	doubleStars := 0
+	for _, p := range pat {
+		if p == doubleStar {
+			doubleStars++
+		}
+	}
+	if doubleStars > maxDoubleStars {
+		return false
+	}
+	return matchSegments(pat, strings.Split(name, "/"))
 }
 
 func matchSegments(pat, name []string) bool {
 	for len(pat) > 0 {
-		if pat[0] == "**" {
+		if pat[0] == doubleStar {
 			if len(pat) == 1 {
 				return true // trailing ** matches any remaining depth
 			}

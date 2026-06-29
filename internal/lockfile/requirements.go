@@ -52,7 +52,7 @@ func parseRequirements(path string) (Lockfile, error) {
 				l.gaps = append(l.gaps, types.CoverageGap{
 					Path:   path,
 					Kind:   "unpinned_dependency",
-					Detail: fmt.Sprintf("%s — %s", strings.TrimSpace(raw), reason),
+					Detail: fmt.Sprintf("%s — %s", sanitiseLine(strings.TrimSpace(raw)), reason),
 				})
 			}
 			continue
@@ -75,6 +75,18 @@ func parseRequirements(path string) (Lockfile, error) {
 	}
 
 	return l, nil
+}
+
+// sanitiseLine strips control and escape characters from a raw requirements line
+// before it is embedded in user-facing output, so a crafted requirements.txt
+// cannot inject ANSI escape sequences into the terminal.
+func sanitiseLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || (r >= 0x20 && r != 0x7f) {
+			return r
+		}
+		return -1
+	}, s)
 }
 
 // unpinnedRequirement reports whether a non-pinned line still names a dependency
