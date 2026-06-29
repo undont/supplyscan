@@ -89,7 +89,7 @@ func TestStripComments_MixedComments(t *testing.T) {
 	got := StripComments([]byte(input))
 
 	// Result should be valid JSON
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
 	}
@@ -242,7 +242,7 @@ func TestStripComments_ValidJSON(t *testing.T) {
 	got := StripComments([]byte(input))
 
 	// Result should be valid JSON
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
 	}
@@ -252,7 +252,7 @@ func TestStripComments_ValidJSON(t *testing.T) {
 		t.Errorf("lockfileVersion = %v, want 0", result["lockfileVersion"])
 	}
 
-	packages, ok := result["packages"].(map[string]interface{})
+	packages, ok := result["packages"].(map[string]any)
 	if !ok {
 		t.Fatal("packages is not a map")
 	}
@@ -278,14 +278,14 @@ func TestStripComments_NestedStructures(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v", err)
 	}
 
 	// Navigate to nested value
-	level1 := result["level1"].(map[string]interface{})
-	level2 := level1["level2"].(map[string]interface{})
+	level1 := result["level1"].(map[string]any)
+	level2 := level1["level2"].(map[string]any)
 	if level2["level3"] != "value" {
 		t.Errorf("level3 = %v, want value", level2["level3"])
 	}
@@ -303,12 +303,12 @@ func TestStripComments_Arrays(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v", err)
 	}
 
-	arr := result["array"].([]interface{})
+	arr := result["array"].([]any)
 	if len(arr) != 2 {
 		t.Errorf("array length = %d, want 2", len(arr))
 	}
@@ -325,7 +325,7 @@ func TestStripComments_Unicode(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestStripComments_LargeInput(t *testing.T) {
 	// Generate a large JSONC input
 	var input string
 	input = "{\n"
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		input += `  // comment ` + "\n"
 		input += `  "key` + string(rune('0'+i%10)) + `": "value",` + "\n"
 	}
@@ -344,7 +344,7 @@ func TestStripComments_LargeInput(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v", err)
 	}
@@ -360,8 +360,7 @@ func BenchmarkStripComments(b *testing.B) {
 		"key3": "/* not a comment */"
 	}`)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		StripComments(input)
 	}
 }
@@ -369,8 +368,7 @@ func BenchmarkStripComments(b *testing.B) {
 func BenchmarkStripComments_NoComments(b *testing.B) {
 	input := []byte(`{"key1": "value1", "key2": "value2", "key3": "value3"}`)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		StripComments(input)
 	}
 }
@@ -471,7 +469,7 @@ func TestStripComments_TrailingCommasValidJSON(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
 	}
@@ -492,7 +490,7 @@ func TestStripComments_CommentsAndTrailingCommas(t *testing.T) {
 
 	got := StripComments([]byte(input))
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(got, &result); err != nil {
 		t.Errorf("Result is not valid JSON: %v\nResult: %s", err, got)
 	}

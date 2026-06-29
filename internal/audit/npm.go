@@ -144,7 +144,7 @@ func (c *Client) doBulkAudit(req bulkRequest, _ []types.Dependency) (bulkRespons
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // URL is the configured npm audit endpoint
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
@@ -243,10 +243,10 @@ func isVersionVulnerable(version string, constraint *semver.Constraints) bool {
 func normaliseSeverity(s string) string {
 	s = strings.ToLower(s)
 	switch s {
-	case severityCritical, severityHigh, severityModerate, severityLow, "info":
+	case types.SeverityCritical, types.SeverityHigh, types.SeverityModerate, types.SeverityLow, types.SeverityInfo:
 		return s
 	default:
-		return "unknown"
+		return types.SeverityUnknown
 	}
 }
 

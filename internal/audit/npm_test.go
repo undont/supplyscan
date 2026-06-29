@@ -684,15 +684,14 @@ func TestDefaultEndpoint_IsBulkAPI(t *testing.T) {
 
 func BenchmarkBuildBulkRequest(b *testing.B) {
 	deps := make([]types.Dependency, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		deps[i] = types.Dependency{
 			Name:    "pkg-" + string(rune('a'+i%26)),
 			Version: "1.0.0",
 		}
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buildBulkRequest(deps)
 	}
 }
@@ -700,7 +699,7 @@ func BenchmarkBuildBulkRequest(b *testing.B) {
 func BenchmarkConvertBulkAdvisories(b *testing.B) {
 	resp := make(bulkResponse)
 	deps := make([]types.Dependency, 0, 50)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		name := "test-pkg-" + string(rune('a'+i%26))
 		resp[name] = []bulkAdvisory{
 			{
@@ -714,8 +713,7 @@ func BenchmarkConvertBulkAdvisories(b *testing.B) {
 		deps = append(deps, types.Dependency{Name: name, Version: "1.0.0"})
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		convertBulkAdvisories(resp, deps)
 	}
 }
