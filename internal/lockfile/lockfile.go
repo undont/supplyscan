@@ -112,6 +112,45 @@ func FindLockfiles(dir string, recursive bool) ([]string, error) {
 	return lockfiles, err
 }
 
+// projectWalk accumulates the result of a single project tree walk: the
+// lockfile paths to scan and the per-directory lock/manifest/workspace state
+// used for coverage analysis.
+type projectWalk struct {
+	lockfiles []string
+	dirs      map[string]*dirState
+}
+
+func (w *projectWalk) state(dir string) *dirState {
+	s := w.dirs[dir]
+	if s == nil {
+		s = &dirState{}
+		w.dirs[dir] = s
+	}
+	return s
+}
+
+// classifyFile records one regular file against the directory it lives in,
+// sorting it into a lockfile, manifest or workspace declaration as recognised.
+func (w *projectWalk) classifyFile(path, name string) {
+	parent := filepath.Dir(path)
+	switch kind, ok := lockfileRegistry[name]; {
+	case ok && kind.ecosystem == ecoJS:
+		w.lockfiles = append(w.lockfiles, path)
+		w.state(parent).jsLock = path
+	case ok && kind.ecosystem == ecoPy:
+		w.lockfiles = append(w.lockfiles, path)
+		w.state(parent).pyLock = path
+	case mapHas(jsManifestNames, name):
+		w.state(parent).jsManifest = path
+	case mapHas(pyManifestNames, name):
+		w.state(parent).pyManifest = path
+	case name == pnpmWorkspaceFile:
+		w.state(parent).pnpmWorkspace = path
+	case name == denoConfigFile || name == denoConfigFileC:
+		w.state(parent).denoConfig = path
+	}
+}
+
 // walkProject walks dir once, collecting lockfile paths and the per-directory
 // lock/manifest/workspace state used for coverage analysis. A single walk backs
 // both FindLockfiles and the coverage analysis so a scan stats the tree once.
@@ -124,16 +163,7 @@ func walkProject(dir string, recursive bool) (lockfiles []string, dirs map[strin
 		return nil, nil, errors.New("path is not a directory")
 	}
 
-	dirs = make(map[string]*dirState)
-	state := func(d string) *dirState {
-		s := dirs[d]
-		if s == nil {
-			s = &dirState{}
-			dirs[d] = s
-		}
-		return s
-	}
-
+	w := &projectWalk{dirs: make(map[string]*dirState)}
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip inaccessible paths within the directory
@@ -144,29 +174,13 @@ func walkProject(dir string, recursive bool) (lockfiles []string, dirs map[strin
 			}
 			return nil
 		}
-		name, parent := d.Name(), filepath.Dir(path)
-		switch kind, ok := lockfileRegistry[name]; {
-		case ok && kind.ecosystem == ecoJS:
-			lockfiles = append(lockfiles, path)
-			state(parent).jsLock = path
-		case ok && kind.ecosystem == ecoPy:
-			lockfiles = append(lockfiles, path)
-			state(parent).pyLock = path
-		case mapHas(jsManifestNames, name):
-			state(parent).jsManifest = path
-		case mapHas(pyManifestNames, name):
-			state(parent).pyManifest = path
-		case name == pnpmWorkspaceFile:
-			state(parent).pnpmWorkspace = path
-		case name == denoConfigFile || name == denoConfigFileC:
-			state(parent).denoConfig = path
-		}
+		w.classifyFile(path, d.Name())
 		return nil
 	}
 	if err := filepath.WalkDir(dir, walkFn); err != nil {
 		return nil, nil, err
 	}
-	return lockfiles, dirs, nil
+	return w.lockfiles, w.dirs, nil
 }
 
 // CoverageReporter is implemented by parsers that can report dependency sources

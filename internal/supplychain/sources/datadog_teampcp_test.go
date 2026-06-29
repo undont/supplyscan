@@ -67,29 +67,29 @@ NPM PACKAGE,case-insensitive-pkg,1.0.0
 	if _, ok := data.Packages["docker|aquasec/trivy"]; ok {
 		t.Error("docker row should have been filtered out")
 	}
-	if pkg, ok := data.Packages["pypi|litellm"]; !ok {
-		t.Error("missing pypi|litellm (PyPI row should be retained, name PEP 503 normalised)")
-	} else {
-		if pkg.Ecosystem != "pypi" {
-			t.Errorf("litellm ecosystem = %q, want pypi", pkg.Ecosystem)
+
+	assertPkg := func(key, wantName, wantEcosystem string, wantVersions int) {
+		t.Helper()
+		pkg, ok := data.Packages[key]
+		if !ok {
+			t.Errorf("missing %s", key)
+			return
 		}
-		if pkg.Name != "litellm" {
-			t.Errorf("litellm name = %q, want normalised litellm", pkg.Name)
+		if wantName != "" && pkg.Name != wantName {
+			t.Errorf("%s name = %q, want %q", key, pkg.Name, wantName)
 		}
-		if len(pkg.Versions) != 2 {
-			t.Errorf("litellm versions = %v, want 2", pkg.Versions)
+		if pkg.Ecosystem != wantEcosystem {
+			t.Errorf("%s ecosystem = %q, want %q", key, pkg.Ecosystem, wantEcosystem)
 		}
-	}
-	if pkg, ok := data.Packages["npm|@tanstack/query-core"]; !ok {
-		t.Error("missing npm|@tanstack/query-core")
-	} else {
-		if pkg.Ecosystem != "npm" {
-			t.Errorf("@tanstack/query-core ecosystem = %q, want npm", pkg.Ecosystem)
-		}
-		if len(pkg.Versions) != 2 {
-			t.Errorf("@tanstack/query-core versions = %v, want 2", pkg.Versions)
+		if len(pkg.Versions) != wantVersions {
+			t.Errorf("%s versions = %v, want %d", key, pkg.Versions, wantVersions)
 		}
 	}
+
+	// PyPI row is retained with its name PEP 503 normalised
+	assertPkg("pypi|litellm", "litellm", "pypi", 2)
+	assertPkg("npm|@tanstack/query-core", "", "npm", 2)
+
 	if _, ok := data.Packages["npm|case-insensitive-pkg"]; !ok {
 		t.Error("artefact_type match should be case-insensitive")
 	}
