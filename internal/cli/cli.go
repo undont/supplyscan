@@ -30,6 +30,7 @@ const (
 	noDevFlag       = "--no-dev"
 	strictFlag      = "--strict"
 	shallowFlag     = "--shallow"
+	timingFlag      = "--time"
 )
 
 // exitFunc is the function used to exit the program. Override in tests.
@@ -126,6 +127,7 @@ type scanOptions struct {
 	IncludeDev bool
 	Strict     bool
 	JSON       bool
+	ShowTiming bool
 }
 
 // parseCheckArgs extracts the package, version and ecosystem from check args.
@@ -178,6 +180,8 @@ func parseScanFlags(args []string) scanOptions {
 			opts.IncludeDev = false
 		case strictFlag:
 			opts.Strict = true // exit non-zero on coverage gaps
+		case timingFlag:
+			opts.ShowTiming = true // show time to parse/find lockfiles
 		}
 	}
 	return opts
@@ -253,6 +257,7 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 			Path:       path,
 			Recursive:  opts.Recursive,
 			IncludeDev: opts.IncludeDev,
+			ShowTiming: opts.ShowTiming,
 		})
 	} else {
 		// Show spinner during scan
@@ -264,6 +269,7 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 						Path:       path,
 						Recursive:  opts.Recursive,
 						IncludeDev: opts.IncludeDev,
+						ShowTiming: opts.ShowTiming,
 					},
 				)
 			}).
