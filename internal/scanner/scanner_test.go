@@ -186,6 +186,7 @@ func TestScan_SingleLockfile(t *testing.T) {
 		Path:       projectDir,
 		Recursive:  false,
 		IncludeDev: true,
+		ShowTiming: true,
 	})
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)

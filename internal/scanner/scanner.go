@@ -68,6 +68,7 @@ type ScanOptions struct {
 	Path       string
 	Recursive  bool
 	IncludeDev bool
+	ShowTiming bool
 }
 
 // Scan performs a full security scan on a project.
@@ -151,8 +152,10 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 	// Update issue counts
 	result.Summary.Issues = countIssues(result)
 
-	timing.TotalMs = time.Since(scanStart).Milliseconds()
-	result.Timing = timing
+	if opts.ShowTiming {
+		timing.TotalMs = time.Since(scanStart).Milliseconds()
+		result.Timing = timing
+	}
 
 	return result, nil
 }

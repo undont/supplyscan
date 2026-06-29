@@ -188,8 +188,9 @@ type ScanResult struct {
 	// AuditErrors records vuln-audit backends that failed (npm/OSV unreachable or
 	// erroring) so a scan that could not reach an audit API reads differently from
 	// a genuinely clean one rather than silently reporting no findings.
-	AuditErrors []string    `json:"audit_errors,omitempty"`
-	Timing      *ScanTiming `json:"timing,omitempty"`
+	AuditErrors []string `json:"audit_errors,omitempty"`
+	// Timing not shown by default, pass --time to the cli to see
+	Timing *ScanTiming `json:"timing,omitempty"`
 }
 
 // SupplyChainResult contains all supply chain findings.
