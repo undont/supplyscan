@@ -671,6 +671,50 @@ func mockExit(t *testing.T) (restore func(), exitCode *int) {
 	return restore, exitCode
 }
 
+func TestRunScan_StrictExitCodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		strict   bool
+		gaps     int
+		findings []types.VulnerabilityFinding
+		want     int
+	}{
+		{"clean scan exits 0", false, 0, nil, 0},
+		{"gaps without strict exit 0", false, 2, nil, 0},
+		{"strict with no gaps exits 0", true, 0, nil, 0},
+		{"strict with gaps exits 3", true, 2, nil, 3},
+		{
+			"findings win over strict gaps (exit 2)", true, 2,
+			[]types.VulnerabilityFinding{{Severity: types.SeverityCritical, Package: "x", InstalledVersion: "1.0.0"}},
+			2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetOutputJSON()
+			outputJSON = true
+			restore, exitCode := mockExit(t)
+			defer restore()
+
+			mock := &mockScanner{scanResult: &types.ScanResult{
+				Summary: types.ScanSummary{CoverageGaps: tt.gaps},
+				Vulnerabilities: types.VulnerabilityResult{
+					Findings: tt.findings,
+				},
+			}}
+
+			captureOutput(func() {
+				runScan(mock, "/tmp/test", scanOptions{Strict: tt.strict})
+			})
+
+			if *exitCode != tt.want {
+				t.Errorf("exit code = %d, want %d", *exitCode, tt.want)
+			}
+		})
+	}
+}
+
 func TestRun_NoArgs(t *testing.T) {
 	resetOutputJSON()
 	restore, _ := mockExit(t)
