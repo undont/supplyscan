@@ -46,8 +46,8 @@ func osvTestServer(t *testing.T, vulnsByPackage map[string][]string, details map
 
 func newTestOSVClient(srv *httptest.Server) *OSVClient {
 	return NewOSVClient(
-		withOSVURLs(srv.URL+"/v1/querybatch", srv.URL+"/v1/vulns/"),
-		withOSVHTTPClient(srv.Client()),
+		WithOSVURLs(srv.URL+"/v1/querybatch", srv.URL+"/v1/vulns/"),
+		WithOSVHTTPClient(srv.Client()),
 	)
 }
 

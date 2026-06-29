@@ -27,6 +27,7 @@ type lockfileResult struct {
 	advisories []types.SupplyChainAdvisory
 	vulns      []types.VulnerabilityFinding
 	coverage   []types.CoverageGap
+	auditErrs  []string
 	timing     types.LockfileTiming
 	depCount   int
 	ok         bool   // false when the lockfile was discovered but unreadable
@@ -137,6 +138,7 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 		result.SupplyChain.Advisories = append(result.SupplyChain.Advisories, r.advisories...)
 		result.Vulnerabilities.Findings = append(result.Vulnerabilities.Findings, r.vulns...)
 		result.Coverage = append(result.Coverage, r.coverage...)
+		result.AuditErrors = append(result.AuditErrors, r.auditErrs...)
 		timing.Lockfiles = append(timing.Lockfiles, r.timing)
 	}
 
@@ -197,12 +199,15 @@ func (s *defaultScanner) scanLockfile(path string, includeDev bool) lockfileResu
 	res.advisories = advisories
 
 	auditStart := time.Now()
-	vulns := s.auditVulnerabilities(deps)
+	vulns, auditErrs := s.auditVulnerabilities(deps)
 	res.timing.AuditMs = time.Since(auditStart).Milliseconds()
 	for i := range vulns {
 		vulns[i].Lockfile = path
 	}
 	res.vulns = vulns
+	for _, e := range auditErrs {
+		res.auditErrs = append(res.auditErrs, path+": "+e)
+	}
 
 	res.timing.TotalMs = time.Since(lfStart).Milliseconds()
 	res.ok = true
@@ -236,11 +241,13 @@ func (s *defaultScanner) CheckPackage(ecosystem, name, version string) (*types.C
 	timing.SupplyChainMs = time.Since(scStart).Milliseconds()
 
 	// Audit for vulnerabilities. npm uses the npm bulk advisory API; other
-	// ecosystems use OSV.dev.
+	// ecosystems use OSV.dev. A backend failure is surfaced rather than dropped.
 	auditStart := time.Now()
-	vulns := s.auditSinglePackage(ecosystem, name, version)
+	vulns, err := s.auditSinglePackage(ecosystem, name, version)
 	timing.AuditMs = time.Since(auditStart).Milliseconds()
-	if vulns != nil {
+	if err != nil {
+		result.AuditError = err.Error()
+	} else if vulns != nil {
 		result.Vulnerabilities = vulns
 	}
 
@@ -250,20 +257,14 @@ func (s *defaultScanner) CheckPackage(ecosystem, name, version string) (*types.C
 	return result, nil
 }
 
-// auditSinglePackage routes a single-package vuln audit to the right backend.
-func (s *defaultScanner) auditSinglePackage(ecosystem, name, version string) []types.VulnerabilityInfo {
+// auditSinglePackage routes a single-package vuln audit to the right backend,
+// returning the backend error so an unreachable API is not mistaken for a clean
+// package.
+func (s *defaultScanner) auditSinglePackage(ecosystem, name, version string) ([]types.VulnerabilityInfo, error) {
 	if isNpm(ecosystem) {
-		vulns, err := s.auditClient.AuditSinglePackage(name, version)
-		if err != nil {
-			return nil
-		}
-		return vulns
+		return s.auditClient.AuditSinglePackage(name, version)
 	}
-	vulns, err := s.osvAudit.AuditSinglePackage(ecosystem, name, version)
-	if err != nil {
-		return nil
-	}
-	return vulns
+	return s.osvAudit.AuditSinglePackage(ecosystem, name, version)
 }
 
 // Refresh refreshes the IOC database.
@@ -277,18 +278,27 @@ func (s *defaultScanner) GetStatus() types.IOCDatabaseStatus {
 }
 
 // auditVulnerabilities audits a dependency set, splitting it by ecosystem and
-// routing npm through the npm bulk advisory API and the rest through OSV.dev.
-func (s *defaultScanner) auditVulnerabilities(deps []types.Dependency) []types.VulnerabilityFinding {
+// routing npm through the npm bulk advisory API and the rest through OSV.dev. A
+// backend failure is returned as an error string rather than silently dropped,
+// so the caller can distinguish "nothing found" from "could not check".
+func (s *defaultScanner) auditVulnerabilities(deps []types.Dependency) (findings []types.VulnerabilityFinding, errs []string) {
 	npm, other := splitByEcosystem(deps)
 
-	var findings []types.VulnerabilityFinding
-	if vulns, err := s.auditClient.AuditDependencies(npm); err == nil {
-		findings = append(findings, vulns...)
+	if len(npm) > 0 {
+		if vulns, err := s.auditClient.AuditDependencies(npm); err != nil {
+			errs = append(errs, "npm audit failed: "+err.Error())
+		} else {
+			findings = append(findings, vulns...)
+		}
 	}
-	if vulns, err := s.osvAudit.AuditDependencies(other); err == nil {
-		findings = append(findings, vulns...)
+	if len(other) > 0 {
+		if vulns, err := s.osvAudit.AuditDependencies(other); err != nil {
+			errs = append(errs, "OSV audit failed: "+err.Error())
+		} else {
+			findings = append(findings, vulns...)
+		}
 	}
-	return findings
+	return findings, errs
 }
 
 // splitByEcosystem partitions deps into npm (empty ecosystem counts as npm) and

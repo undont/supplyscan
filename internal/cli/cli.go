@@ -308,9 +308,22 @@ func printScanResult(result *types.ScanResult) {
 	printVulnerabilities(result.Vulnerabilities.Findings)
 	printLockfiles(result.Lockfiles)
 	printSkipped(result.Skipped)
+	printAuditErrors(result.AuditErrors)
 	printCoverageGaps(result.Coverage)
 	printWorkspaceCoverage(result.WorkspaceCoverage)
 	printScanTiming(result.Timing)
+}
+
+func printAuditErrors(auditErrors []string) {
+	if len(auditErrors) == 0 {
+		return
+	}
+	fmt.Println(formatSection(fmt.Sprintf("Audit errors — %d backend call(s) failed", len(auditErrors))))
+	fmt.Println("  Some dependencies could not be checked for known vulnerabilities; results may be incomplete.")
+	for _, e := range auditErrors {
+		fmt.Printf("  %s %s\n", formatMuted(bullet), e)
+	}
+	fmt.Println()
 }
 
 func printSkipped(skipped []types.SkippedLockfile) {
@@ -597,6 +610,9 @@ func printCheckResult(result *types.CheckResult, pkg, version string) {
 				fmt.Printf("    %s %s\n", formatLabel("Patched in"), formatVersion(v.PatchedIn))
 			}
 		}
+	} else if result.AuditError != "" {
+		fmt.Println(formatWarning("Vulnerability audit failed; could not check for known vulnerabilities"))
+		fmt.Printf("  %s %s\n", formatMuted(bullet), result.AuditError)
 	} else {
 		fmt.Println(formatSuccess("No known vulnerabilities"))
 	}

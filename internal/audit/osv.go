@@ -46,15 +46,15 @@ type OSVClient struct {
 // OSVOption configures an OSVClient.
 type OSVOption func(*OSVClient)
 
-// withOSVHTTPClient sets a custom HTTP client.
-func withOSVHTTPClient(c *http.Client) OSVOption {
+// WithOSVHTTPClient sets a custom HTTP client.
+func WithOSVHTTPClient(c *http.Client) OSVOption {
 	return func(client *OSVClient) {
 		client.httpClient = c
 	}
 }
 
-// withOSVURLs sets custom query and vuln endpoints (for testing).
-func withOSVURLs(queryURL, vulnURL string) OSVOption {
+// WithOSVURLs sets custom query and vuln endpoints (for testing).
+func WithOSVURLs(queryURL, vulnURL string) OSVOption {
 	return func(client *OSVClient) {
 		client.queryURL = queryURL
 		client.vulnURL = vulnURL

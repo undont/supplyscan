@@ -185,7 +185,11 @@ type ScanResult struct {
 	Skipped           []SkippedLockfile   `json:"skipped,omitempty"`
 	Coverage          []CoverageGap       `json:"coverage,omitempty"`
 	WorkspaceCoverage []WorkspaceCoverage `json:"workspace_coverage,omitempty"`
-	Timing            *ScanTiming         `json:"timing,omitempty"`
+	// AuditErrors records vuln-audit backends that failed (npm/OSV unreachable or
+	// erroring) so a scan that could not reach an audit API reads differently from
+	// a genuinely clean one rather than silently reporting no findings.
+	AuditErrors []string    `json:"audit_errors,omitempty"`
+	Timing      *ScanTiming `json:"timing,omitempty"`
 }
 
 // SupplyChainResult contains all supply chain findings.
@@ -258,7 +262,10 @@ type IOCDatabaseStatus struct {
 type CheckResult struct {
 	SupplyChain     CheckSupplyChainResult `json:"supply_chain"`
 	Vulnerabilities []VulnerabilityInfo    `json:"vulnerabilities"`
-	Timing          *CheckTiming           `json:"timing,omitempty"`
+	// AuditError is set when the vuln-audit backend failed, so an unreachable API
+	// is distinguishable from a package with no known vulnerabilities.
+	AuditError string       `json:"audit_error,omitempty"`
+	Timing     *CheckTiming `json:"timing,omitempty"`
 }
 
 // CheckSupplyChainResult indicates if a package is compromised.

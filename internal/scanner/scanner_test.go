@@ -3,10 +3,15 @@ package scanner
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/undont/supplyscan/internal/audit"
+	"github.com/undont/supplyscan/internal/supplychain"
 	"github.com/undont/supplyscan/internal/types"
 )
 
@@ -643,7 +648,6 @@ func BenchmarkScan(b *testing.B) {
 
 	scanner, _ := New()
 
-	
 	for b.Loop() {
 		_, err := scanner.Scan(ScanOptions{Path: tmpDir})
 		if err != nil {
@@ -770,5 +774,49 @@ func TestScan_AggregatesCoverageGaps(t *testing.T) {
 	}
 	if kinds["manifest_without_lockfile"] != 1 {
 		t.Errorf("manifest_without_lockfile gaps = %d, want 1", kinds["manifest_without_lockfile"])
+	}
+}
+
+// TestScan_SurfacesAuditErrors verifies a failing vuln-audit backend is reported
+// in AuditErrors rather than silently dropped, so a scan that could not reach an
+// audit API is distinguishable from a clean one.
+func TestScan_SurfacesAuditErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	detector, err := supplychain.NewDetector()
+	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+	s := &defaultScanner{
+		detector:    detector,
+		auditClient: audit.NewClient(),
+		osvAudit: audit.NewOSVClient(
+			audit.WithOSVURLs(srv.URL+"/querybatch", srv.URL+"/vulns/"),
+			audit.WithOSVHTTPClient(srv.Client()),
+		),
+	}
+
+	// a pinned PyPI dependency is routed to the (failing) OSV backend; no npm deps
+	// means the npm backend is never called.
+	projectDir := createTestProject(t, map[string]string{
+		"requirements.txt": "flask==2.0.0\n",
+	})
+
+	result, err := s.Scan(ScanOptions{Path: projectDir, Recursive: false, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if len(result.AuditErrors) == 0 {
+		t.Fatal("expected AuditErrors to be populated when the OSV backend fails")
+	}
+	if !strings.Contains(result.AuditErrors[0], "OSV audit failed") {
+		t.Errorf("AuditErrors[0] = %q, want it to mention the OSV backend", result.AuditErrors[0])
+	}
+	if !strings.Contains(result.AuditErrors[0], "requirements.txt") {
+		t.Errorf("AuditErrors[0] = %q, want it to name the lockfile", result.AuditErrors[0])
 	}
 }
