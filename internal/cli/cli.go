@@ -269,6 +269,7 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 						Path:       path,
 						Recursive:  opts.Recursive,
 						IncludeDev: opts.IncludeDev,
+						ShowTiming: opts.ShowTiming,
 					},
 				)
 			}).

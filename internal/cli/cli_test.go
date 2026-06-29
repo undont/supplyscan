@@ -23,9 +23,11 @@ type mockScanner struct {
 	refreshResult *types.RefreshResult
 	refreshErr    error
 	status        types.IOCDatabaseStatus
+	gotScanOpts   scanner.ScanOptions
 }
 
-func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
+func (m *mockScanner) Scan(opts scanner.ScanOptions) (*types.ScanResult, error) {
+	m.gotScanOpts = opts
 	return m.scanResult, m.scanErr
 }
 
@@ -721,6 +723,32 @@ func TestRunScan_StrictExitCodes(t *testing.T) {
 
 			if *exitCode != tt.want {
 				t.Errorf("exit code = %d, want %d", *exitCode, tt.want)
+			}
+		})
+	}
+}
+
+// runScan has separate JSON and spinner branches; ShowTiming must reach the
+// scanner from both, otherwise --time is a silent no-op in human output.
+func TestRunScan_PropagatesShowTiming(t *testing.T) {
+	for _, json := range []bool{true, false} {
+		name := "spinner"
+		if json {
+			name = "json"
+		}
+		t.Run(name, func(t *testing.T) {
+			resetOutputJSON()
+			outputJSON = json
+			restore, _ := mockExit(t)
+			defer restore()
+
+			mock := newDefaultMock()
+			captureOutput(func() {
+				runScan(mock, "/tmp/test", scanOptions{ShowTiming: true})
+			})
+
+			if !mock.gotScanOpts.ShowTiming {
+				t.Error("ShowTiming did not reach scanner")
 			}
 		})
 	}
