@@ -30,10 +30,13 @@ const (
 
 	// severityCritical is the critical severity level.
 	severityCritical = "critical"
-
-	// ecosystemNPM is the npm ecosystem identifier.
-	ecosystemNPM = "npm"
 )
+
+// ghEcosystems maps the GitHub advisory ecosystem ids we query to our internal ids.
+var ghEcosystems = []struct{ query, internal string }{
+	{"npm", types.EcosystemNPM},
+	{"pip", types.EcosystemPyPI},
+}
 
 // GitHubAdvisorySource fetches malware advisories from GitHub's Security Advisory Database.
 type GitHubAdvisorySource struct {
@@ -79,31 +82,35 @@ func (s *GitHubAdvisorySource) CacheTTL() time.Duration {
 	return gitHubCacheTTL
 }
 
-// Fetch retrieves malware advisories from the GitHub Advisory Database.
+// Fetch retrieves malware advisories from the GitHub Advisory Database across
+// every ecosystem we care about (npm and pip), tagging each result with our
+// internal ecosystem id.
 func (s *GitHubAdvisorySource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
 	packages := make(map[string]types.SourcePackage)
-	cursor := ""
 
-	for {
-		advisories, nextCursor, err := s.fetchPage(ctx, client, cursor)
-		if err != nil {
-			// If we have some data, return it even if pagination failed
-			if len(packages) > 0 {
+	for _, eco := range ghEcosystems {
+		cursor := ""
+		for {
+			advisories, nextCursor, err := s.fetchPage(ctx, client, cursor, eco.query)
+			if err != nil {
+				// If we have some data, return it even if pagination failed
+				if len(packages) > 0 {
+					break
+				}
+				return nil, err
+			}
+
+			// Process advisories
+			for i := range advisories {
+				s.mergeAdvisoryIntoPackages(packages, &advisories[i], eco)
+			}
+
+			// Check for more pages
+			if nextCursor == "" || len(advisories) < gitHubPageSize {
 				break
 			}
-			return nil, err
+			cursor = nextCursor
 		}
-
-		// Process advisories
-		for i := range advisories {
-			s.mergeAdvisoryIntoPackages(packages, &advisories[i])
-		}
-
-		// Check for more pages
-		if nextCursor == "" || len(advisories) < gitHubPageSize {
-			break
-		}
-		cursor = nextCursor
 	}
 
 	return &types.SourceData{
@@ -114,8 +121,8 @@ func (s *GitHubAdvisorySource) Fetch(ctx context.Context, client *http.Client) (
 	}, nil
 }
 
-// fetchPage fetches a single page of advisories.
-func (s *GitHubAdvisorySource) fetchPage(ctx context.Context, client *http.Client, cursor string) ([]gitHubAdvisory, string, error) {
+// fetchPage fetches a single page of advisories for the given GitHub ecosystem.
+func (s *GitHubAdvisorySource) fetchPage(ctx context.Context, client *http.Client, cursor, ecosystem string) ([]gitHubAdvisory, string, error) {
 	// Build URL with query parameters
 	u, err := url.Parse(s.url)
 	if err != nil {
@@ -123,7 +130,7 @@ func (s *GitHubAdvisorySource) fetchPage(ctx context.Context, client *http.Clien
 	}
 
 	q := u.Query()
-	q.Set("ecosystem", "npm")
+	q.Set("ecosystem", ecosystem)
 	q.Set("type", "malware")
 	q.Set("per_page", fmt.Sprintf("%d", gitHubPageSize))
 	if cursor != "" {
@@ -223,28 +230,30 @@ func extractNextCursor(linkHeader string) string {
 	return ""
 }
 
-// parseVersionRange converts a version range string to a list of versions.
-// For malware, typically the range is "= X.Y.Z" for specific versions.
+// parseVersionRange converts a version range string into stored version entries.
+// A pure enumerated list ("= 1.0.0, = 1.0.1") becomes discrete versions; any
+// real constraint is kept intact (comma means AND in semver, so it must NOT be
+// split) for later semver evaluation in versionMatches.
 func parseVersionRange(versionRange string) []string {
 	versionRange = strings.TrimSpace(versionRange)
 	if versionRange == "" {
 		return nil
 	}
-
-	// Handle comma-separated versions: "= 1.0.0, = 1.0.1"
-	var versions []string
+	enumerated := make([]string, 0)
+	allEquals := true
 	for _, part := range strings.Split(versionRange, ",") {
 		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "= ") {
-			version := strings.TrimPrefix(part, "= ")
-			versions = append(versions, strings.TrimSpace(version))
-		} else if part != "" {
-			// For ranges like ">= 0" (all versions), store the range itself
-			versions = append(versions, part)
+		if after, ok := strings.CutPrefix(part, "= "); ok {
+			enumerated = append(enumerated, strings.TrimSpace(after))
+		} else {
+			allEquals = false
+			break
 		}
 	}
-
-	return versions
+	if allEquals && len(enumerated) > 0 {
+		return enumerated // pure "= x, = y" list → discrete versions
+	}
+	return []string{versionRange} // real constraint, kept intact for semver evaluation
 }
 
 // mergeVersionRanges merges two version lists.
@@ -283,26 +292,33 @@ func normaliseSeverity(severity string) string {
 	}
 }
 
-// mergeAdvisoryIntoPackages processes a single advisory and merges it into the packages map.
-func (s *GitHubAdvisorySource) mergeAdvisoryIntoPackages(packages map[string]types.SourcePackage, adv *gitHubAdvisory) {
+// mergeAdvisoryIntoPackages processes a single advisory and merges it into the
+// packages map, filtering and tagging by the queried ecosystem. PyPI names are
+// PEP 503 normalised and the map key is ecosystem-scoped so an npm and a PyPI
+// package of the same name don't collide.
+func (s *GitHubAdvisorySource) mergeAdvisoryIntoPackages(
+	packages map[string]types.SourcePackage,
+	adv *gitHubAdvisory,
+	eco struct{ query, internal string },
+) {
 	for j := range adv.Vulnerabilities {
 		vuln := &adv.Vulnerabilities[j]
-		if vuln.Package.Ecosystem != ecosystemNPM {
+		if vuln.Package.Ecosystem != eco.query {
 			continue
 		}
-
 		pkgName := vuln.Package.Name
-		if existing, ok := packages[pkgName]; ok {
-			// Merge versions and advisory IDs
+		if eco.internal == types.EcosystemPyPI {
+			pkgName = types.NormalizePyPIName(pkgName)
+		}
+		key := eco.internal + "|" + pkgName
+		if existing, ok := packages[key]; ok {
 			existing.Versions = mergeVersionRanges(existing.Versions, vuln.VulnerableVersionRange)
-			if existing.AdvisoryID != adv.GHSAID {
-				// Keep the first advisory ID, could track multiple if needed
-				existing.AdvisoryID = adv.GHSAID
-			}
-			packages[pkgName] = existing
+			existing.AdvisoryID = adv.GHSAID
+			packages[key] = existing
 		} else {
-			packages[pkgName] = types.SourcePackage{
+			packages[key] = types.SourcePackage{
 				Name:       pkgName,
+				Ecosystem:  eco.internal,
 				Versions:   parseVersionRange(vuln.VulnerableVersionRange),
 				AdvisoryID: adv.GHSAID,
 				Severity:   normaliseSeverity(adv.Severity),

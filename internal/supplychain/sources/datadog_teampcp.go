@@ -29,10 +29,13 @@ const (
 
 	// teamPCPNpmArtefactType is the artefact_type value for npm packages in the CSV.
 	teamPCPNpmArtefactType = "npm package"
+
+	// teamPCPPyPIArtefactType is the artefact_type value for PyPI packages in the CSV.
+	teamPCPPyPIArtefactType = "pypi package"
 )
 
 // DataDogTeamPCPSource fetches the DataDog TeamPCP IOC list, which spans multiple
-// ecosystems (npm, PyPI, Docker). Only npm package rows are retained.
+// ecosystems (npm, PyPI, Docker). npm and PyPI rows are retained.
 type DataDogTeamPCPSource struct {
 	url string
 }
@@ -66,7 +69,7 @@ func (s *DataDogTeamPCPSource) CacheTTL() time.Duration {
 	return dataDogTeamPCPCacheTTL
 }
 
-// Fetch retrieves the TeamPCP IOC list and filters it down to npm packages.
+// Fetch retrieves the TeamPCP IOC list and retains npm and PyPI packages.
 func (s *DataDogTeamPCPSource) Fetch(ctx context.Context, client *http.Client) (*types.SourceData, error) {
 	return fetchCSVSource(ctx, client, s.url, s.Name(), dataDogTeamPCPCampaign, parseDataDogTeamPCPCSV)
 }
@@ -76,7 +79,7 @@ type teamPCPColumns struct {
 	artefact, name, version int
 }
 
-// parseDataDogTeamPCPCSV parses the TeamPCP CSV and keeps only npm rows.
+// parseDataDogTeamPCPCSV parses the TeamPCP CSV and keeps npm and PyPI rows.
 // Expected schema: artefact_type,name,affected_versions (column name uses
 // the US spelling in the upstream data — see literal below).
 func parseDataDogTeamPCPCSV(r io.Reader) (map[string]types.SourcePackage, error) {
@@ -106,29 +109,39 @@ func parseDataDogTeamPCPCSV(r io.Reader) (map[string]types.SourcePackage, error)
 			continue
 		}
 		if pkg := parseTeamPCPRow(record, cols); pkg != nil {
-			packages[pkg.Name] = *pkg
+			packages[pkg.Ecosystem+"|"+pkg.Name] = *pkg
 		}
 	}
 	return packages, nil
 }
 
 // parseTeamPCPRow turns a single CSV record into a SourcePackage, or returns
-// nil if the row should be skipped (non-npm artefact, malformed, or empty).
+// nil if the row should be skipped (out-of-scope artefact, malformed, or empty).
 func parseTeamPCPRow(record []string, cols teamPCPColumns) *types.SourcePackage {
 	if len(record) <= cols.artefact || len(record) <= cols.name || len(record) <= cols.version {
 		return nil
 	}
-	if !strings.EqualFold(strings.TrimSpace(record[cols.artefact]), teamPCPNpmArtefactType) {
-		return nil
+	var ecosystem string
+	switch strings.ToLower(strings.TrimSpace(record[cols.artefact])) {
+	case teamPCPNpmArtefactType:
+		ecosystem = types.EcosystemNPM
+	case teamPCPPyPIArtefactType:
+		ecosystem = types.EcosystemPyPI
+	default:
+		return nil // Docker and other artefact types are out of scope
 	}
 	name := strings.TrimSpace(record[cols.name])
 	versionsStr := strings.TrimSpace(record[cols.version])
 	if name == "" || versionsStr == "" {
 		return nil
 	}
+	if ecosystem == types.EcosystemPyPI {
+		name = types.NormalizePyPIName(name)
+	}
 	return &types.SourcePackage{
-		Name:     name,
-		Versions: splitAndTrim(versionsStr),
-		Severity: "critical",
+		Name:      name,
+		Ecosystem: ecosystem,
+		Versions:  splitAndTrim(versionsStr),
+		Severity:  "critical",
 	}
 }

@@ -29,13 +29,14 @@ func TestDataDogTeamPCPSource_WithOptions(t *testing.T) {
 	}
 }
 
-func TestDataDogTeamPCPSource_Fetch_FiltersNpmOnly(t *testing.T) {
-	// Mixed-ecosystem CSV — only npm rows should survive.
+func TestDataDogTeamPCPSource_Fetch_RetainsNpmAndPyPI(t *testing.T) {
+	// Mixed-ecosystem CSV — npm and PyPI rows survive (tagged + ecosystem-scoped
+	// keys); docker and other artefact types are dropped.
 	csvData := `artifact_type,name,affected_versions` + "\n" + //nolint:misspell // upstream CSV column name
 		`npm package,@antv/g6,5.0.50
 npm package,@cap-js/sqlite,2.2.2
 npm package,@tanstack/query-core,"5.59.1, 5.59.2"
-pypi package,litellm,"1.82.7, 1.82.8"
+pypi package,LiteLLM,"1.82.7, 1.82.8"
 docker image,aquasec/trivy,"0.69.4, 0.69.5"
 NPM PACKAGE,case-insensitive-pkg,1.0.0
 `
@@ -60,21 +61,36 @@ NPM PACKAGE,case-insensitive-pkg,1.0.0
 	if data.Campaign != dataDogTeamPCPCampaign {
 		t.Errorf("Campaign = %q, want %q", data.Campaign, dataDogTeamPCPCampaign)
 	}
-	if len(data.Packages) != 4 {
-		t.Fatalf("len(Packages) = %d, want 4 (npm rows only)", len(data.Packages))
+	if len(data.Packages) != 5 {
+		t.Fatalf("len(Packages) = %d, want 5 (4 npm + 1 pypi)", len(data.Packages))
 	}
-	if _, ok := data.Packages["litellm"]; ok {
-		t.Error("pypi row should have been filtered out")
-	}
-	if _, ok := data.Packages["aquasec/trivy"]; ok {
+	if _, ok := data.Packages["docker|aquasec/trivy"]; ok {
 		t.Error("docker row should have been filtered out")
 	}
-	if pkg, ok := data.Packages["@tanstack/query-core"]; !ok {
-		t.Error("missing @tanstack/query-core")
-	} else if len(pkg.Versions) != 2 {
-		t.Errorf("@tanstack/query-core versions = %v, want 2", pkg.Versions)
+	if pkg, ok := data.Packages["pypi|litellm"]; !ok {
+		t.Error("missing pypi|litellm (PyPI row should be retained, name PEP 503 normalised)")
+	} else {
+		if pkg.Ecosystem != "pypi" {
+			t.Errorf("litellm ecosystem = %q, want pypi", pkg.Ecosystem)
+		}
+		if pkg.Name != "litellm" {
+			t.Errorf("litellm name = %q, want normalised litellm", pkg.Name)
+		}
+		if len(pkg.Versions) != 2 {
+			t.Errorf("litellm versions = %v, want 2", pkg.Versions)
+		}
 	}
-	if _, ok := data.Packages["case-insensitive-pkg"]; !ok {
+	if pkg, ok := data.Packages["npm|@tanstack/query-core"]; !ok {
+		t.Error("missing npm|@tanstack/query-core")
+	} else {
+		if pkg.Ecosystem != "npm" {
+			t.Errorf("@tanstack/query-core ecosystem = %q, want npm", pkg.Ecosystem)
+		}
+		if len(pkg.Versions) != 2 {
+			t.Errorf("@tanstack/query-core versions = %v, want 2", pkg.Versions)
+		}
+	}
+	if _, ok := data.Packages["npm|case-insensitive-pkg"]; !ok {
 		t.Error("artefact_type match should be case-insensitive")
 	}
 }

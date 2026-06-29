@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/undont/supplyscan/internal/semverutil"
 	"github.com/undont/supplyscan/internal/supplychain/sources"
 	"github.com/undont/supplyscan/internal/types"
 )
@@ -124,7 +125,7 @@ func (d *Detector) CheckPackage(ecosystem, name, version string) *types.SupplyCh
 
 	// Check if this version is compromised
 	for _, v := range pkg.Versions {
-		if versionMatches(v, version) {
+		if versionMatches(ecosystem, v, version) {
 			// Determine finding type based on campaigns
 			findingType := "supply_chain_compromise"
 			if len(pkg.Campaigns) > 0 {
@@ -166,7 +167,7 @@ func (d *Detector) checkNamespace(ecosystem, name, version string) *types.Supply
 	if db != nil {
 		if pkg, exists := db.Packages[iocKey(ecosystem, name)]; exists {
 			for _, v := range pkg.Versions {
-				if versionMatches(v, version) {
+				if versionMatches(ecosystem, v, version) {
 					return nil // Already reported as finding
 				}
 			}
@@ -211,27 +212,28 @@ func (d *Detector) GetStatus() types.IOCDatabaseStatus {
 }
 
 // versionMatches checks if a stored version entry matches an installed version.
-// Handles exact matches and common range patterns from IOC sources:
+// Handles exact matches, all-versions wildcards, and (for npm) semver range
+// constraints such as "< 1.2.3" or ">= 1.0.0, < 2.0.0":
 //   - "1.0.0" matches "1.0.0" (exact)
-//   - ">= 0" matches any version (all versions compromised, common for malware)
-//   - "<= X" or ">= X" with wildcard-like patterns
-func versionMatches(storedVersion, installedVersion string) bool {
-	// Exact match (most common case)
-	if storedVersion == installedVersion {
+//   - ">= 0"/"*"/"" matches any version (all versions compromised, common for malware)
+//   - "< 1.2.3" matches "1.0.0" but not "1.2.3" (npm only)
+//
+// PyPI is intentionally excluded from range evaluation: semver is not PEP 440.
+func versionMatches(ecosystem, storedVersion, installedVersion string) bool {
+	stored := strings.TrimSpace(storedVersion)
+	if stored == installedVersion {
 		return true
 	}
-
-	trimmed := strings.TrimSpace(storedVersion)
-
-	// ">= 0" means all versions are affected (common for typosquatting malware)
-	if trimmed == ">= 0" || trimmed == ">=0" {
-		return true
+	if stored == ">= 0" || stored == ">=0" || stored == "*" || stored == "" {
+		return true // all versions affected (common for typosquat malware)
 	}
 
-	// "* " or empty range means all versions
-	if trimmed == "*" {
-		return true
+	// npm: evaluate semver constraints such as "< 1.2.3" or ">= 1.0.0, < 2.0.0".
+	// PyPI is intentionally excluded — semver is not PEP 440 (see Honest scope).
+	// An unparsable constraint yields no match (ok is false), never a false positive.
+	if normalizeEcosystem(ecosystem) == types.EcosystemNPM {
+		matched, _ := semverutil.Satisfies(installedVersion, stored)
+		return matched
 	}
-
 	return false
 }
