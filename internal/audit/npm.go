@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	semver "github.com/Masterminds/semver/v3"
-
+	"github.com/undont/supplyscan/internal/semverutil"
 	"github.com/undont/supplyscan/internal/types"
 )
 
@@ -86,7 +85,7 @@ func (c *Client) AuditDependencies(deps []types.Dependency) ([]types.Vulnerabili
 	req := buildBulkRequest(deps)
 
 	// Make the request
-	resp, err := c.doBulkAudit(req, deps)
+	resp, err := c.doBulkAudit(req)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +126,7 @@ func buildBulkRequest(deps []types.Dependency) bulkRequest {
 }
 
 // doBulkAudit makes the HTTP request to the npm bulk advisory API.
-func (c *Client) doBulkAudit(req bulkRequest, _ []types.Dependency) (bulkResponse, error) {
+func (c *Client) doBulkAudit(req bulkRequest) (bulkResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal audit request: %w", err)
@@ -144,7 +143,7 @@ func (c *Client) doBulkAudit(req bulkRequest, _ []types.Dependency) (bulkRespons
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // URL is the configured npm audit endpoint
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
@@ -180,12 +179,13 @@ func convertBulkAdvisories(resp bulkResponse, deps []types.Dependency) []types.V
 	for pkgName, advisories := range resp {
 		versions := installedVersions[pkgName]
 		for i := range advisories {
-			// Parse the vulnerable_versions constraint to filter out patched versions
-			constraint := parseVulnerableRange(advisories[i].VulnerableVersions)
+			vulnRange := advisories[i].VulnerableVersions
 
-			// Report a finding only for installed versions that are actually vulnerable
+			// Report a finding only for installed versions that are actually
+			// vulnerable. An unparsable range or version is treated as vulnerable
+			// (safe default: the npm API already filtered for this package).
 			for version := range versions {
-				if !isVersionVulnerable(version, constraint) {
+				if matched, ok := semverutil.Satisfies(version, vulnRange); ok && !matched {
 					continue
 				}
 				finding := types.VulnerabilityFinding{
@@ -204,49 +204,14 @@ func convertBulkAdvisories(resp bulkResponse, deps []types.Dependency) []types.V
 	return findings
 }
 
-// parseVulnerableRange parses an npm vulnerable_versions range into a semver constraint.
-// Returns nil if the range cannot be parsed.
-func parseVulnerableRange(vulnRange string) *semver.Constraints {
-	if vulnRange == "" {
-		return nil
-	}
-	// npm uses "||" for OR in ranges, which Masterminds/semver also supports
-	c, err := semver.NewConstraint(vulnRange)
-	if err != nil {
-		return nil
-	}
-	return c
-}
-
-// isVersionVulnerable checks whether a version falls within a vulnerable range.
-// If the constraint is nil (unparseable or missing), the version is assumed vulnerable
-// as a safe fallback — the npm API already filtered for this package.
-//
-// Pre-release versions (e.g. "3.0.5-alpha.1") are not matched by constraints like
-// "<3.0.5" due to Masterminds/semver pre-release precedence rules. Such versions will
-// parse successfully but may not match the constraint, potentially producing false
-// negatives. This matches standard SemVer behaviour.
-func isVersionVulnerable(version string, constraint *semver.Constraints) bool {
-	if constraint == nil {
-		// Cannot parse range; fall back to reporting (safe default)
-		return true
-	}
-	v, err := semver.NewVersion(version)
-	if err != nil {
-		// Cannot parse version; fall back to reporting (safe default)
-		return true
-	}
-	return constraint.Check(v)
-}
-
 // normaliseSeverity normalises severity strings.
 func normaliseSeverity(s string) string {
 	s = strings.ToLower(s)
 	switch s {
-	case severityCritical, severityHigh, severityModerate, severityLow, "info":
+	case types.SeverityCritical, types.SeverityHigh, types.SeverityModerate, types.SeverityLow, types.SeverityInfo:
 		return s
 	default:
-		return "unknown"
+		return types.SeverityUnknown
 	}
 }
 

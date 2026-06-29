@@ -17,7 +17,7 @@ type yarnClassicLockfile struct {
 }
 
 func (l *yarnClassicLockfile) Type() string {
-	return "yarn-classic"
+	return typeYarnClassic
 }
 
 func (l *yarnClassicLockfile) Path() string {

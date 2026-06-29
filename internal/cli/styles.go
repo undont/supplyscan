@@ -4,9 +4,12 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // Colour palette for severity levels and UI elements.
@@ -51,13 +54,13 @@ const (
 // severityStyle returns the appropriate style for a severity level.
 func severityStyle(severity string) lipgloss.Style {
 	switch severity {
-	case "critical":
+	case types.SeverityCritical:
 		return criticalStyle
-	case "high":
+	case types.SeverityHigh:
 		return highStyle
-	case "moderate", "medium":
+	case types.SeverityModerate, "medium":
 		return moderateStyle
-	case "low":
+	case types.SeverityLow:
 		return lowStyle
 	default:
 		return valueStyle
@@ -116,11 +119,11 @@ func formatSection(text string) string {
 
 // formatDivider returns a styled divider line.
 func formatDivider(width int) string {
-	line := ""
-	for i := 0; i < width; i++ {
-		line += "─"
+	var line strings.Builder
+	for range width {
+		line.WriteString("─")
 	}
-	return dividerStyle.Render(line)
+	return dividerStyle.Render(line.String())
 }
 
 // formatMuted returns muted/dimmed text.

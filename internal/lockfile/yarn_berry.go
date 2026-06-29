@@ -16,7 +16,7 @@ type yarnBerryLockfile struct {
 }
 
 func (l *yarnBerryLockfile) Type() string {
-	return "yarn-berry"
+	return typeYarnBerry
 }
 
 func (l *yarnBerryLockfile) Path() string {
@@ -112,9 +112,9 @@ func extractBerryPackageName(key string) string {
 		}
 	} else {
 		// Regular package: name@npm:version
-		atIdx := strings.Index(key, "@")
-		if atIdx != -1 {
-			name = key[:atIdx]
+		before, _, ok := strings.Cut(key, "@")
+		if ok {
+			name = before
 		}
 	}
 

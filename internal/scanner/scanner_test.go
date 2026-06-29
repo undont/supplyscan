@@ -3,10 +3,15 @@ package scanner
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/undont/supplyscan/internal/audit"
+	"github.com/undont/supplyscan/internal/supplychain"
 	"github.com/undont/supplyscan/internal/types"
 )
 
@@ -617,7 +622,7 @@ func BenchmarkScan(b *testing.B) {
 		"lockfileVersion": 3,
 		"packages": {`
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if i > 0 {
 			lockfileContent += ","
 		}
@@ -643,11 +648,175 @@ func BenchmarkScan(b *testing.B) {
 
 	scanner, _ := New()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := scanner.Scan(ScanOptions{Path: tmpDir})
 		if err != nil {
 			fmt.Printf("Error scanning: %v\n", err)
 		}
+	}
+}
+
+func TestScan_DeterministicOrder(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"a/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/a":{"version":"1.0.0"}}}`,
+		"b/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/b":{"version":"1.0.0"}}}`,
+		"c/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/c":{"version":"1.0.0"}}}`,
+		"d/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/d":{"version":"1.0.0"}}}`,
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	order := func() []string {
+		result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+		if err != nil {
+			t.Fatalf("Scan() error = %v", err)
+		}
+		paths := make([]string, len(result.Lockfiles))
+		for i, lf := range result.Lockfiles {
+			paths[i] = lf.Path
+		}
+		return paths
+	}
+
+	first := order()
+	if len(first) != 4 {
+		t.Fatalf("expected 4 lockfiles, got %d", len(first))
+	}
+	// stable path order (lexical) across repeated runs despite concurrent scanning
+	for i := 1; i < len(first); i++ {
+		if first[i-1] > first[i] {
+			t.Errorf("lockfiles not in stable path order: %q before %q", first[i-1], first[i])
+		}
+	}
+	for run := range 3 {
+		next := order()
+		if len(next) != len(first) {
+			t.Fatalf("run %d: length changed %d -> %d", run, len(first), len(next))
+		}
+		for i := range first {
+			if next[i] != first[i] {
+				t.Errorf("run %d: order changed at %d: %q != %q", run, i, next[i], first[i])
+			}
+		}
+	}
+}
+
+func TestScan_SurfacesSkippedLockfiles(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"package-lock.json":     `{invalid json`,
+		"sub/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/pkg":{"version":"1.0.0"}}}`,
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if result.Summary.LockfilesScanned != 1 {
+		t.Errorf("LockfilesScanned = %d, want 1", result.Summary.LockfilesScanned)
+	}
+	if result.Summary.LockfilesSkipped != 1 {
+		t.Errorf("LockfilesSkipped = %d, want 1", result.Summary.LockfilesSkipped)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("Skipped count = %d, want 1", len(result.Skipped))
+	}
+	if result.Skipped[0].Reason == "" {
+		t.Error("skipped lockfile has empty reason")
+	}
+	if filepath.Base(result.Skipped[0].Path) != "package-lock.json" {
+		t.Errorf("skipped path = %q, want the malformed package-lock.json", result.Skipped[0].Path)
+	}
+	// the malformed lockfile is surfaced as skipped, not scanned: it adds no entry
+	// to the scanned set
+	if len(result.Lockfiles) != 1 {
+		t.Errorf("Lockfiles (scanned) = %d, want 1 (malformed one is skipped, not scanned)", len(result.Lockfiles))
+	}
+}
+
+func TestScan_AggregatesCoverageGaps(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"pyapp/requirements.txt": "flask\n",          // unpinned → 1 unpinned_dependency gap
+		"jsapp/package.json":     `{"name":"jsapp"}`, // no JS lockfile → 1 manifest gap
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if result.Summary.CoverageGaps != len(result.Coverage) {
+		t.Errorf("Summary.CoverageGaps = %d, but len(Coverage) = %d", result.Summary.CoverageGaps, len(result.Coverage))
+	}
+	if len(result.Coverage) != 2 {
+		t.Fatalf("Coverage count = %d, want 2:\n%+v", len(result.Coverage), result.Coverage)
+	}
+
+	kinds := map[string]int{}
+	for _, g := range result.Coverage {
+		kinds[g.Kind]++
+	}
+	if kinds["unpinned_dependency"] != 1 {
+		t.Errorf("unpinned_dependency gaps = %d, want 1", kinds["unpinned_dependency"])
+	}
+	if kinds["manifest_without_lockfile"] != 1 {
+		t.Errorf("manifest_without_lockfile gaps = %d, want 1", kinds["manifest_without_lockfile"])
+	}
+}
+
+// TestScan_SurfacesAuditErrors verifies a failing vuln-audit backend is reported
+// in AuditErrors rather than silently dropped, so a scan that could not reach an
+// audit API is distinguishable from a clean one.
+func TestScan_SurfacesAuditErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	detector, err := supplychain.NewDetector()
+	if err != nil {
+		t.Fatalf("NewDetector() error = %v", err)
+	}
+	s := &defaultScanner{
+		detector:    detector,
+		auditClient: audit.NewClient(),
+		osvAudit: audit.NewOSVClient(
+			audit.WithOSVURLs(srv.URL+"/querybatch", srv.URL+"/vulns/"),
+			audit.WithOSVHTTPClient(srv.Client()),
+		),
+	}
+
+	// a pinned PyPI dependency is routed to the (failing) OSV backend; no npm deps
+	// means the npm backend is never called.
+	projectDir := createTestProject(t, map[string]string{
+		"requirements.txt": "flask==2.0.0\n",
+	})
+
+	result, err := s.Scan(ScanOptions{Path: projectDir, Recursive: false, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if len(result.AuditErrors) == 0 {
+		t.Fatal("expected AuditErrors to be populated when the OSV backend fails")
+	}
+	if !strings.Contains(result.AuditErrors[0], "OSV audit failed") {
+		t.Errorf("AuditErrors[0] = %q, want it to mention the OSV backend", result.AuditErrors[0])
+	}
+	if !strings.Contains(result.AuditErrors[0], "requirements.txt") {
+		t.Errorf("AuditErrors[0] = %q, want it to name the lockfile", result.AuditErrors[0])
 	}
 }

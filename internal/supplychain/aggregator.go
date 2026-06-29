@@ -370,8 +370,12 @@ func (a *aggregator) fetchAll(ctx context.Context, force bool) ([]*types.SourceD
 				errors[routineSrc.Name()] = err
 			} else if data != nil {
 				results = append(results, data)
-				// Save to per-source cache (best effort)
-				_ = a.cache.saveSource(routineSrc.Name(), data)
+				// Save to per-source cache (best effort). Partial fetches are used
+				// for this run but not cached, so a truncated set isn't served as
+				// authoritative until the next refresh.
+				if !data.Partial {
+					_ = a.cache.saveSource(routineSrc.Name(), data)
+				}
 			}
 			mu.Unlock()
 			return nil // Don't fail the group on individual source errors

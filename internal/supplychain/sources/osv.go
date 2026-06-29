@@ -151,7 +151,7 @@ func (s *OSVSource) downloadZip(ctx context.Context, client *http.Client, url st
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // URL is the configured OSV GCS endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch zip: %w", err)
 	}
@@ -281,7 +281,7 @@ func mergeOSVVulnerability(packages map[string]types.SourcePackage, vuln *osvVul
 				Ecosystem:  eco,
 				Versions:   versions,
 				AdvisoryID: advisoryID,
-				Severity:   "critical", // Malware defaults to critical
+				Severity:   severityCritical, // Malware defaults to critical
 			}
 		}
 	}

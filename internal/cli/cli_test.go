@@ -136,16 +136,29 @@ func captureStderr(f func()) string {
 
 func TestParseScanFlags(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantRec bool
-		wantDev bool
+		name       string
+		args       []string
+		wantRec    bool
+		wantDev    bool
+		wantStrict bool
 	}{
 		{
 			name:    "no flags",
 			args:    []string{},
-			wantRec: false,
+			wantRec: true, // recursive is now the default
 			wantDev: true, // Default includes dev
+		},
+		{
+			name:    "no-recursive opt-out",
+			args:    []string{"--no-recursive"},
+			wantRec: false,
+			wantDev: true,
+		},
+		{
+			name:    "shallow alias",
+			args:    []string{"--shallow"},
+			wantRec: false,
+			wantDev: true,
 		},
 		{
 			name:    "recursive long",
@@ -162,6 +175,12 @@ func TestParseScanFlags(t *testing.T) {
 		{
 			name:    "no-dev",
 			args:    []string{"--no-dev"},
+			wantRec: true, // recursive default unaffected by --no-dev
+			wantDev: false,
+		},
+		{
+			name:    "no-recursive with no-dev",
+			args:    []string{"--no-recursive", "--no-dev"},
 			wantRec: false,
 			wantDev: false,
 		},
@@ -183,6 +202,13 @@ func TestParseScanFlags(t *testing.T) {
 			wantRec: true,
 			wantDev: true,
 		},
+		{
+			name:       "strict flag",
+			args:       []string{"--strict"},
+			wantRec:    true,
+			wantDev:    true,
+			wantStrict: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -193,6 +219,9 @@ func TestParseScanFlags(t *testing.T) {
 			}
 			if opts.IncludeDev != tt.wantDev {
 				t.Errorf("IncludeDev = %v, want %v", opts.IncludeDev, tt.wantDev)
+			}
+			if opts.Strict != tt.wantStrict {
+				t.Errorf("Strict = %v, want %v", opts.Strict, tt.wantStrict)
 			}
 		})
 	}
@@ -269,7 +298,7 @@ func TestPrintUsage(t *testing.T) {
 		"scan",
 		"check",
 		"refresh",
-		"--recursive",
+		"--no-recursive",
 		"--json",
 	}
 
@@ -640,6 +669,50 @@ func mockExit(t *testing.T) (restore func(), exitCode *int) {
 		exitFunc = oldExit
 	}
 	return restore, exitCode
+}
+
+func TestRunScan_StrictExitCodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		strict   bool
+		gaps     int
+		findings []types.VulnerabilityFinding
+		want     int
+	}{
+		{"clean scan exits 0", false, 0, nil, 0},
+		{"gaps without strict exit 0", false, 2, nil, 0},
+		{"strict with no gaps exits 0", true, 0, nil, 0},
+		{"strict with gaps exits 3", true, 2, nil, 3},
+		{
+			"findings win over strict gaps (exit 2)", true, 2,
+			[]types.VulnerabilityFinding{{Severity: types.SeverityCritical, Package: "x", InstalledVersion: "1.0.0"}},
+			2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetOutputJSON()
+			outputJSON = true
+			restore, exitCode := mockExit(t)
+			defer restore()
+
+			mock := &mockScanner{scanResult: &types.ScanResult{
+				Summary: types.ScanSummary{CoverageGaps: tt.gaps},
+				Vulnerabilities: types.VulnerabilityResult{
+					Findings: tt.findings,
+				},
+			}}
+
+			captureOutput(func() {
+				runScan(mock, "/tmp/test", scanOptions{Strict: tt.strict})
+			})
+
+			if *exitCode != tt.want {
+				t.Errorf("exit code = %d, want %d", *exitCode, tt.want)
+			}
+		})
+	}
 }
 
 func TestRun_NoArgs(t *testing.T) {

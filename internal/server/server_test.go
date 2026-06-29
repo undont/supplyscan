@@ -14,6 +14,7 @@ import (
 type mockScanner struct {
 	scanResult    *types.ScanResult
 	scanErr       error
+	gotScanOpts   scanner.ScanOptions
 	checkResult   *types.CheckResult
 	checkErr      error
 	refreshResult *types.RefreshResult
@@ -21,7 +22,8 @@ type mockScanner struct {
 	status        types.IOCDatabaseStatus
 }
 
-func (m *mockScanner) Scan(_ scanner.ScanOptions) (*types.ScanResult, error) {
+func (m *mockScanner) Scan(opts scanner.ScanOptions) (*types.ScanResult, error) {
+	m.gotScanOpts = opts
 	return m.scanResult, m.scanErr
 }
 
@@ -109,9 +111,10 @@ func TestHandleScan_ValidPath(t *testing.T) {
 	setupMockScanner(mock)
 
 	includeDev := true
+	recursive := false
 	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
 		Path:       "/tmp/test",
-		Recursive:  false,
+		Recursive:  &recursive,
 		IncludeDev: &includeDev,
 	})
 	if err != nil {
@@ -171,19 +174,23 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 	}
 	setupMockScanner(mock)
 
+	// Explicit recursive=false stays shallow and is threaded through verbatim.
+	shallow := false
 	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
 		Path:      "/tmp/test",
-		Recursive: false,
+		Recursive: &shallow,
 	})
 	if err != nil {
 		t.Fatalf("handleScan() error = %v", err)
 	}
-
+	if mock.gotScanOpts.Recursive {
+		t.Error("Recursive: &false should resolve to Recursive=false in ScanOptions")
+	}
 	if scanResult.Summary.LockfilesScanned != 1 {
 		t.Errorf("Non-recursive: LockfilesScanned = %d, want 1", scanResult.Summary.LockfilesScanned)
 	}
 
-	// Recursive scan: 2 lockfiles
+	// Omitted recursive (nil) defaults to recursive=true.
 	mock.scanResult = &types.ScanResult{
 		Summary: types.ScanSummary{
 			LockfilesScanned:  2,
@@ -199,13 +206,14 @@ func TestHandleScan_RecursiveOption(t *testing.T) {
 	}
 
 	_, recursiveResult, err := handleScan(context.Background(), nil, scanInput{
-		Path:      "/tmp/test",
-		Recursive: true,
+		Path: "/tmp/test", // Recursive omitted → defaults to true
 	})
 	if err != nil {
 		t.Fatalf("handleScan() recursive error = %v", err)
 	}
-
+	if !mock.gotScanOpts.Recursive {
+		t.Error("Recursive omitted (nil) should default to Recursive=true in ScanOptions")
+	}
 	if recursiveResult.Summary.LockfilesScanned != 2 {
 		t.Errorf("Recursive: LockfilesScanned = %d, want 2", recursiveResult.Summary.LockfilesScanned)
 	}
@@ -230,7 +238,6 @@ func TestHandleScan_IncludeDevDefaultsToTrue(t *testing.T) {
 
 	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
 		Path:       "/tmp/test",
-		Recursive:  false,
 		IncludeDev: nil, // Explicitly nil to test default behaviour
 	})
 	if err != nil {
@@ -261,7 +268,6 @@ func TestHandleScan_IncludeDevExplicitlyFalse(t *testing.T) {
 	includeDev := false
 	_, scanResult, err := handleScan(context.Background(), nil, scanInput{
 		Path:       "/tmp/test",
-		Recursive:  false,
 		IncludeDev: &includeDev,
 	})
 	if err != nil {
@@ -384,13 +390,17 @@ func TestHandleRefresh_Force(t *testing.T) {
 func TestInputTypes(t *testing.T) {
 	// Verify scanInput fields
 	includeDev := true
+	recursive := true
 	si := scanInput{
 		Path:       "/test",
-		Recursive:  true,
+		Recursive:  &recursive,
 		IncludeDev: &includeDev,
 	}
 	if si.Path != "/test" {
 		t.Errorf("scanInput.Path = %q, want /test", si.Path)
+	}
+	if si.Recursive == nil || !*si.Recursive {
+		t.Error("scanInput.Recursive not set correctly")
 	}
 
 	// Verify checkInput fields

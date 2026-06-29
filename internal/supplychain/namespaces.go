@@ -12,22 +12,31 @@ type namespaceCampaign struct {
 	When string // e.g. "Sep–Nov 2025"
 }
 
+// campaign names and windows reused across the at-risk-namespace table.
+const (
+	campaignShaiHulud = "Shai-Hulud"
+	campaignTeamPCP   = "TeamPCP / Mini Shai-Hulud"
+
+	whenShaiHulud = "Sep–Nov 2025"
+	whenTeamPCP   = "Apr–May 2026"
+)
+
 // atRiskNamespaces maps npm scopes to the campaign that put them on the list.
 // Packages from these scopes get an informational note even when the installed
 // version isn't on any IOC list — your version is fine; the scope's history
 // just means it's worth keeping an eye on future updates from those maintainers.
 var atRiskNamespaces = map[string]namespaceCampaign{
 	// Shai-Hulud — worm spread through compromised maintainer tokens
-	"@ctrl":                   {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@nativescript-community": {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@crowdstrike":            {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@asyncapi":               {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@posthog":                {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@postman":                {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@ensdomains":             {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@zapier":                 {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@art-ws":                 {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
-	"@ngx":                    {Name: "Shai-Hulud", When: "Sep–Nov 2025"},
+	"@ctrl":                   {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@nativescript-community": {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@crowdstrike":            {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@asyncapi":               {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@posthog":                {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@postman":                {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@ensdomains":             {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@zapier":                 {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@art-ws":                 {Name: campaignShaiHulud, When: whenShaiHulud},
+	"@ngx":                    {Name: campaignShaiHulud, When: whenShaiHulud},
 
 	// s1ngularity — credential harvesting via the Nx build system
 	"@nx":   {Name: "s1ngularity", When: "Aug 2025"},
@@ -35,12 +44,12 @@ var atRiskNamespaces = map[string]namespaceCampaign{
 
 	// TeamPCP / Mini Shai-Hulud — self-spreading worm targeting SAP CAP,
 	// TanStack, AntV, and other npm scopes
-	"@cap-js":      {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
-	"@tanstack":    {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
-	"@antv":        {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
-	"@lint-md":     {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
-	"@openclaw-cn": {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
-	"@starmind":    {Name: "TeamPCP / Mini Shai-Hulud", When: "Apr–May 2026"},
+	"@cap-js":      {Name: campaignTeamPCP, When: whenTeamPCP},
+	"@tanstack":    {Name: campaignTeamPCP, When: whenTeamPCP},
+	"@antv":        {Name: campaignTeamPCP, When: whenTeamPCP},
+	"@lint-md":     {Name: campaignTeamPCP, When: whenTeamPCP},
+	"@openclaw-cn": {Name: campaignTeamPCP, When: whenTeamPCP},
+	"@starmind":    {Name: campaignTeamPCP, When: whenTeamPCP},
 }
 
 // packageScope returns the npm scope (e.g. "@ctrl") for a scoped package name,

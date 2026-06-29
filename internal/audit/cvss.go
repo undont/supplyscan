@@ -3,15 +3,8 @@ package audit
 import (
 	"math"
 	"strings"
-)
 
-// severity buckets, sharing npm's vocabulary ("moderate" for CVSS medium).
-// CVSS sources only ever give us a score or a textual label; both map here.
-const (
-	severityCritical = "critical"
-	severityHigh     = "high"
-	severityModerate = "moderate"
-	severityLow      = "low"
+	"github.com/undont/supplyscan/internal/types"
 )
 
 // severityFromLabel maps a textual severity (OSV database_specific.severity,
@@ -19,13 +12,13 @@ const (
 func severityFromLabel(label string) string {
 	switch strings.ToLower(strings.TrimSpace(label)) {
 	case "critical":
-		return severityCritical
+		return types.SeverityCritical
 	case "high":
-		return severityHigh
+		return types.SeverityHigh
 	case "moderate", "medium":
-		return severityModerate
+		return types.SeverityModerate
 	case "low":
-		return severityLow
+		return types.SeverityLow
 	default:
 		return ""
 	}
@@ -37,13 +30,13 @@ func severityFromScore(score float64) string {
 	case score <= 0:
 		return ""
 	case score < 4.0:
-		return severityLow
+		return types.SeverityLow
 	case score < 7.0:
-		return severityModerate
+		return types.SeverityModerate
 	case score < 9.0:
-		return severityHigh
+		return types.SeverityHigh
 	default:
-		return severityCritical
+		return types.SeverityCritical
 	}
 }
 

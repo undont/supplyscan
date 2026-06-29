@@ -82,7 +82,7 @@ type statusOutput struct {
 
 type scanInput struct {
 	Path       string `json:"path" jsonschema:"path to the project directory to scan"`
-	Recursive  bool   `json:"recursive,omitempty" jsonschema:"scan subdirectories for lockfiles"`
+	Recursive  *bool  `json:"recursive,omitempty" jsonschema:"scan subdirectories for lockfiles (default: true)"`
 	IncludeDev *bool  `json:"include_dev,omitempty" jsonschema:"include dev dependencies in scan (default: true)"`
 }
 
@@ -133,9 +133,16 @@ func handleScan(_ context.Context, _ *mcp.CallToolRequest, input scanInput) (*mc
 		includeDev = *input.IncludeDev
 	}
 
+	// Default to recursive (matches CLI behaviour); a nil pointer means the
+	// caller omitted it, which is the common case for agents pointing at a repo root.
+	recursive := true
+	if input.Recursive != nil {
+		recursive = *input.Recursive
+	}
+
 	result, err := scan.Scan(scanner.ScanOptions{
 		Path:       input.Path,
-		Recursive:  input.Recursive,
+		Recursive:  recursive,
 		IncludeDev: includeDev,
 	})
 	if err != nil {

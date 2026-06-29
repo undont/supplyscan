@@ -45,7 +45,7 @@ type npmDependencyJSON struct {
 }
 
 func (l *npmLockfile) Type() string {
-	return "npm"
+	return typeNPM
 }
 
 func (l *npmLockfile) Path() string {

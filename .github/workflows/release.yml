@@ -158,7 +158,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.10.1
+          version: v2.12.2
           install-mode: goinstall
 
   # Require a CHANGELOG entry on PRs whose title triggers a release.

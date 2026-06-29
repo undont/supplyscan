@@ -15,6 +15,23 @@ import (
 	"github.com/undont/supplyscan/internal/types"
 )
 
+// cli subcommand names.
+const (
+	cmdStatus  = "status"
+	cmdScan    = "scan"
+	cmdCheck   = "check"
+	cmdRefresh = "refresh"
+)
+
+const (
+	noRecursiveFlag = "--no-recursive"
+	jsonFlag        = "--json"
+	ecosystemFlag   = "--ecosystem"
+	noDevFlag       = "--no-dev"
+	strictFlag      = "--strict"
+	shallowFlag     = "--shallow"
+)
+
 // exitFunc is the function used to exit the program. Override in tests.
 var exitFunc = os.Exit
 
@@ -32,13 +49,11 @@ func Run(scan scanner.Scanner, args []string) {
 	}
 
 	switch args[0] {
-	case "status":
+	case cmdStatus:
 		runStatus(scan)
-	case ".":
+	case ".", cmdScan:
 		dispatchScan(scan, args)
-	case "scan":
-		dispatchScan(scan, args)
-	case "check":
+	case cmdCheck:
 		pkg, version, ecosystem, ok := parseCheckArgs(args[1:])
 		if !ok {
 			printStyledError("check requires package and version arguments")
@@ -46,7 +61,7 @@ func Run(scan scanner.Scanner, args []string) {
 			return
 		}
 		runCheck(scan, ecosystem, pkg, version)
-	case "refresh":
+	case cmdRefresh:
 		force := len(args) > 1 && args[1] == "--force"
 		runRefresh(scan, force)
 	case "help", "--help", "-h":
@@ -75,7 +90,7 @@ func parseGlobalFlags(args []string) []string {
 	var remaining []string
 	for _, arg := range args {
 		switch arg {
-		case "--json":
+		case jsonFlag:
 			outputJSON = true
 		default:
 			remaining = append(remaining, arg)
@@ -93,18 +108,23 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println(formatSection("Commands"))
 	fmt.Println("  status                            Show scanner version and database info")
-	fmt.Println("  scan [path] [--recursive]         Scan a project for vulnerabilities (default: .)")
+	fmt.Println("  scan [path] [--no-recursive] [--strict]")
+	fmt.Println("                                    Scan a project for vulnerabilities (default: . , recursive)")
 	fmt.Println("  check <package> <version>         Check a single package@version")
 	fmt.Println("    [--ecosystem npm|pypi]          Registry to check against (default: npm)")
 	fmt.Println("  refresh [--force]                 Update IOC database from upstream")
 	fmt.Println()
 	fmt.Println(formatSection("Flags"))
 	fmt.Println("  --json                            Output raw JSON (for scripting)")
+	fmt.Println()
+	fmt.Println(formatSection("Exit codes"))
+	fmt.Println("  0 clean   1 error   2 findings   3 coverage gaps (--strict)")
 }
 
 type scanOptions struct {
 	Recursive  bool
 	IncludeDev bool
+	Strict     bool
 	JSON       bool
 }
 
@@ -119,14 +139,14 @@ func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "--ecosystem" || arg == "-e":
+		case arg == ecosystemFlag || arg == "-e":
 			if i+1 >= len(args) {
 				return "", "", "", false
 			}
 			i++
 			ecosystem = normalizeCheckEcosystem(args[i])
-		case strings.HasPrefix(arg, "--ecosystem="):
-			ecosystem = normalizeCheckEcosystem(strings.TrimPrefix(arg, "--ecosystem="))
+		case strings.HasPrefix(arg, ecosystemFlag+"="):
+			ecosystem = normalizeCheckEcosystem(strings.TrimPrefix(arg, ecosystemFlag+"="))
 		default:
 			positional = append(positional, arg)
 		}
@@ -149,13 +169,15 @@ func normalizeCheckEcosystem(s string) string {
 }
 
 func parseScanFlags(args []string) scanOptions {
-	opts := scanOptions{IncludeDev: true}
+	opts := scanOptions{IncludeDev: true, Recursive: true}
 	for _, arg := range args {
 		switch arg {
-		case "--recursive", "-r":
-			opts.Recursive = true
-		case "--no-dev":
+		case noRecursiveFlag, shallowFlag:
+			opts.Recursive = false
+		case noDevFlag:
 			opts.IncludeDev = false
+		case strictFlag:
+			opts.Strict = true // exit non-zero on coverage gaps
 		}
 	}
 	return opts
@@ -262,9 +284,14 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 		printScanResult(result)
 	}
 
-	// Exit with code 2 if vulnerabilities or supply chain issues found
-	if findings.HasScanFindings(result) {
-		exitFunc(2)
+	// Real findings always win (exit 2); only when there are none and --strict is
+	// set do coverage gaps trigger a distinct exit code 3, so CI can tell an
+	// unauditable coverage gap apart from an actual compromise.
+	switch {
+	case findings.HasScanFindings(result):
+		exitFunc(2) // a real compromise/vulnerability was found
+	case opts.Strict && result.Summary.CoverageGaps > 0:
+		exitFunc(3) // strict mode: something could not be audited
 	}
 }
 
@@ -280,7 +307,72 @@ func printScanResult(result *types.ScanResult) {
 	printSupplyChainAdvisories(result.SupplyChain.Advisories)
 	printVulnerabilities(result.Vulnerabilities.Findings)
 	printLockfiles(result.Lockfiles)
+	printSkipped(result.Skipped)
+	printAuditErrors(result.AuditErrors)
+	printCoverageGaps(result.Coverage)
+	printWorkspaceCoverage(result.WorkspaceCoverage)
 	printScanTiming(result.Timing)
+}
+
+func printAuditErrors(auditErrors []string) {
+	if len(auditErrors) == 0 {
+		return
+	}
+	fmt.Println(formatSection(fmt.Sprintf("Audit errors — %d backend call(s) failed", len(auditErrors))))
+	fmt.Println("  Some dependencies could not be checked for known vulnerabilities; results may be incomplete.")
+	for _, e := range auditErrors {
+		fmt.Printf("  %s %s\n", formatMuted(bullet), e)
+	}
+	fmt.Println()
+}
+
+func printSkipped(skipped []types.SkippedLockfile) {
+	if len(skipped) == 0 {
+		return
+	}
+	fmt.Println(formatSection(fmt.Sprintf("Skipped — %d lockfile(s) could not be read", len(skipped))))
+	for _, s := range skipped {
+		fmt.Printf("  %s %s (%s)\n", formatMuted(bullet), s.Path, s.Reason)
+	}
+	fmt.Println()
+}
+
+func printCoverageGaps(gaps []types.CoverageGap) {
+	if len(gaps) == 0 {
+		return
+	}
+	fmt.Println(formatSection(fmt.Sprintf("Coverage gaps — %d source(s) not audited", len(gaps))))
+	fmt.Println("  These dependencies could not be checked. Pin or add a lockfile to cover them.")
+	for _, g := range gaps {
+		fmt.Printf("  %s %s (%s)\n", formatMuted(bullet), g.Path, g.Detail)
+	}
+	fmt.Println()
+}
+
+// printWorkspaceCoverage reports manifests covered by a workspace root lockfile,
+// aggregated per root so a large monorepo reads as one line rather than one per
+// member. Informational: these deps were audited via the root lockfile.
+func printWorkspaceCoverage(covered []types.WorkspaceCoverage) {
+	if len(covered) == 0 {
+		return
+	}
+	order := []string{}
+	counts := map[string]int{}
+	for i := range covered {
+		lock := covered[i].Lockfile
+		if _, seen := counts[lock]; !seen {
+			order = append(order, lock)
+		}
+		counts[lock]++
+	}
+
+	fmt.Println(formatSection("Workspace coverage"))
+	fmt.Printf("  %s\n", formatMuted("Audited via a workspace root lockfile, not separate gaps."))
+	for _, lock := range order {
+		fmt.Printf("  %s %s\n", formatMuted(bullet),
+			formatMuted(fmt.Sprintf("%d member(s) covered by %s", counts[lock], lock)))
+	}
+	fmt.Println()
 }
 
 func printScanSummary(result *types.ScanResult) {
@@ -518,6 +610,9 @@ func printCheckResult(result *types.CheckResult, pkg, version string) {
 				fmt.Printf("    %s %s\n", formatLabel("Patched in"), formatVersion(v.PatchedIn))
 			}
 		}
+	} else if result.AuditError != "" {
+		fmt.Println(formatWarning("Vulnerability audit failed; could not check for known vulnerabilities"))
+		fmt.Printf("  %s %s\n", formatMuted(bullet), result.AuditError)
 	} else {
 		fmt.Println(formatSuccess("No known vulnerabilities"))
 	}
@@ -605,7 +700,11 @@ func printScanTiming(timing *types.ScanTiming) {
 
 	fmt.Println()
 	fmt.Println(formatSection("Timing"))
-	fmt.Printf("  %s %dms\n", formatLabel("Total"), timing.TotalMs)
+	total := fmt.Sprintf("%dms", timing.TotalMs)
+	if len(timing.Lockfiles) > 1 {
+		total += " (lockfiles scanned concurrently)"
+	}
+	fmt.Printf("  %s %s\n", formatLabel("Total"), total)
 	fmt.Printf("  %s %dms\n", formatLabel("IOC load"), timing.IOCLoadMs)
 	fmt.Printf("  %s %dms\n", formatLabel("Find lockfiles"), timing.FindLockfilesMs)
 

@@ -119,19 +119,22 @@ mv supplyscan /usr/local/bin/
 The CLI is the default mode; no flags required.
 
 ```bash
-# Scan current directory
+# Scan current directory (recursive by default, scans every file in the tree)
 supplyscan scan
 supplyscan .  # shorthand
 
-# Scan specific path recursively
-supplyscan scan /path/to/monorepo --recursive
-supplyscan scan /path/to/monorepo -r  # short form
+# Scan a monorepo root; all sub-package lockfiles are found and audited
+supplyscan scan /path/to/monorepo
+
+# Scan only the top level, without descending into subdirectories
+supplyscan scan /path/to/project --no-recursive  # --shallow is an alias
 
 # Scan production dependencies only (exclude devDependencies)
 supplyscan scan --no-dev
 
-# Combine flags
-supplyscan scan /path/to/monorepo -r --no-dev
+# Fail (exit 3) when something can't be audited — unpinned requirements or a
+# manifest with no lockfile — even if no compromise is found. Useful in CI.
+supplyscan scan --strict
 
 # Check a specific package (npm by default)
 supplyscan check lodash 4.17.20
@@ -154,6 +157,17 @@ supplyscan check lodash 4.17.20 --json
 # Show help
 supplyscan help
 ```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Clean — nothing found |
+| `1` | Error (bad path, etc.) |
+| `2` | Findings — a supply-chain compromise or known vulnerability |
+| `3` | Coverage gaps under `--strict` (something could not be audited; no findings) |
+
+Coverage gaps are informational by default and do **not** change the exit code; only `--strict` turns them into the distinct exit code `3`, and a real finding (exit `2`) always takes precedence.
 
 ---
 
@@ -200,8 +214,7 @@ Add to your MCP config file:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `path` | string | Path to the project directory |
-| `recursive` | boolean | Scan subdirectories for lockfiles |
-| `include_dev` | boolean | Include dev dependencies |
+| `include_dev` | boolean | Include dev dependencies (default: `true`) |
 
 #### `supplyscan_check`
 
@@ -239,15 +252,19 @@ Use `supplyscan status` (CLI) or `supplyscan_status` (MCP) to check your current
 
 ### IOC Sources (Aggregated)
 
-- **[DataDog Indicators of Compromise — Shai-Hulud v2](https://github.com/DataDog/indicators-of-compromise/tree/main/shai-hulud-2.0)** for the original Shai-Hulud worm packages
-- **[DataDog Indicators of Compromise — TeamPCP](https://github.com/DataDog/indicators-of-compromise/tree/main/teampcp)** for the Mini Shai-Hulud / TeamPCP campaign (npm rows only)
-- **[GitHub Advisory Database](https://github.com/advisories)** for npm malware advisories (GHSA)
+- **[DataDog Indicators of Compromise — Shai-Hulud v2](https://github.com/DataDog/indicators-of-compromise/tree/main/shai-hulud-2.0)** for the original Shai-Hulud worm packages (npm)
+- **[DataDog Indicators of Compromise — TeamPCP](https://github.com/DataDog/indicators-of-compromise/tree/main/teampcp)** for the Mini Shai-Hulud / TeamPCP campaign (npm and PyPI rows)
+- **[GitHub Advisory Database](https://github.com/advisories)** for npm and PyPI (`pip`) malware advisories (GHSA)
 - **[OSV.dev](https://osv.dev)** for npm and PyPI malware entries (`MAL-` advisories)
 
 ### Vulnerability Data
 
 - **[npm audit API](https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities)** for known CVEs in npm packages
 - **[OSV.dev querybatch](https://google.github.io/osv.dev/post-v1-querybatch/)** for known vulnerabilities in PyPI packages
+
+### Version-range matching
+
+IOC entries expressed as version ranges (e.g. `< 1.2.3`, `>= 1.0.0, < 2.0.0`) are evaluated for **npm** using semver, so a range advisory matches any affected installed version. **PyPI** IOC ranges are not range-evaluated — PyPI matches exact pins, enumerated version lists, and all-versions wildcards only. This is because PyPI uses PEP 440, not semver, and adding a PEP 440 parser cuts against the tool's minimal-attack-surface design for a thin slice of cases (the overwhelming majority of PyPI malware IOCs are enumerated specific versions or all-versions typosquats). PEP 440 range support is a documented fast-follow if range-form PyPI IOCs start appearing.
 
 ---
 

@@ -75,7 +75,7 @@ func tomlUnquote(s string) string {
 // `["default", "dev"]` contains value.
 func tomlArrayContains(raw, value string) bool {
 	raw = strings.Trim(strings.TrimSpace(raw), "[]")
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		if tomlUnquote(strings.TrimSpace(part)) == value {
 			return true
 		}

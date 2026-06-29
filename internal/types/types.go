@@ -7,6 +7,17 @@ import (
 	"strings"
 )
 
+// severity indicates the threat level of a vulnerability or supply chain compromise.
+// it is used in both supply chain and vulnerability findings.
+const (
+	SeverityCritical = "critical"
+	SeverityHigh     = "high"
+	SeverityModerate = "moderate"
+	SeverityLow      = "low"
+	SeverityInfo     = "info"
+	SeverityUnknown  = "unknown"
+)
+
 // Ecosystem identifies the package registry a dependency belongs to. Package
 // names collide across registries (both npm and PyPI ship a "requests", "six",
 // etc.) so IOC matching must be scoped by ecosystem, not name alone.
@@ -57,6 +68,30 @@ type LockfileInfo struct {
 	Path         string `json:"path"`
 	Type         string `json:"type"`
 	Dependencies int    `json:"dependencies"`
+}
+
+// SkippedLockfile records a lockfile that was discovered but could not be
+// scanned (e.g. unreadable or an unrecognised format).
+type SkippedLockfile struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// CoverageGap records something present in the project that could not be audited
+// (an unpinned requirement, or a manifest with no lockfile). Surfacing these keeps
+// a clean scan from implying coverage it doesn't have.
+type CoverageGap struct {
+	Path   string `json:"path"`
+	Kind   string `json:"kind"` // "unpinned_dependency" | "manifest_without_lockfile"
+	Detail string `json:"detail"`
+}
+
+// WorkspaceCoverage records a manifest that has no co-located lockfile but is a
+// member of a workspace whose root lockfile we scanned, i.e. its dependencies were
+// audited via that root rather than being a coverage gap.
+type WorkspaceCoverage struct {
+	Manifest string `json:"manifest"` // the member manifest (e.g. apps/web/package.json)
+	Lockfile string `json:"lockfile"` // the workspace root lockfile that covers it
 }
 
 // SupportedLockfiles is the list of lockfile formats we can parse.
@@ -127,7 +162,9 @@ type VulnerabilityFinding struct {
 // ScanSummary contains aggregated scan statistics.
 type ScanSummary struct {
 	LockfilesScanned  int         `json:"lockfiles_scanned"`
+	LockfilesSkipped  int         `json:"lockfiles_skipped,omitempty"`
 	TotalDependencies int         `json:"total_dependencies"`
+	CoverageGaps      int         `json:"coverage_gaps,omitempty"`
 	Issues            IssueCounts `json:"issues"`
 }
 
@@ -141,11 +178,18 @@ type IssueCounts struct {
 
 // ScanResult is the complete output of a security scan.
 type ScanResult struct {
-	Summary         ScanSummary         `json:"summary"`
-	SupplyChain     SupplyChainResult   `json:"supply_chain"`
-	Vulnerabilities VulnerabilityResult `json:"vulnerabilities"`
-	Lockfiles       []LockfileInfo      `json:"lockfiles"`
-	Timing          *ScanTiming         `json:"timing,omitempty"`
+	Summary           ScanSummary         `json:"summary"`
+	SupplyChain       SupplyChainResult   `json:"supply_chain"`
+	Vulnerabilities   VulnerabilityResult `json:"vulnerabilities"`
+	Lockfiles         []LockfileInfo      `json:"lockfiles"`
+	Skipped           []SkippedLockfile   `json:"skipped,omitempty"`
+	Coverage          []CoverageGap       `json:"coverage,omitempty"`
+	WorkspaceCoverage []WorkspaceCoverage `json:"workspace_coverage,omitempty"`
+	// AuditErrors records vuln-audit backends that failed (npm/OSV unreachable or
+	// erroring) so a scan that could not reach an audit API reads differently from
+	// a genuinely clean one rather than silently reporting no findings.
+	AuditErrors []string    `json:"audit_errors,omitempty"`
+	Timing      *ScanTiming `json:"timing,omitempty"`
 }
 
 // SupplyChainResult contains all supply chain findings.
@@ -218,7 +262,10 @@ type IOCDatabaseStatus struct {
 type CheckResult struct {
 	SupplyChain     CheckSupplyChainResult `json:"supply_chain"`
 	Vulnerabilities []VulnerabilityInfo    `json:"vulnerabilities"`
-	Timing          *CheckTiming           `json:"timing,omitempty"`
+	// AuditError is set when the vuln-audit backend failed, so an unreachable API
+	// is distinguishable from a package with no known vulnerabilities.
+	AuditError string       `json:"audit_error,omitempty"`
+	Timing     *CheckTiming `json:"timing,omitempty"`
 }
 
 // CheckSupplyChainResult indicates if a package is compromised.
@@ -270,6 +317,11 @@ type SourceData struct {
 
 	// FetchedAt is when this data was retrieved.
 	FetchedAt string `json:"fetched_at"`
+
+	// Partial is set when the fetch returned an incomplete result (e.g. pagination
+	// failed midway). Partial data is still usable for the current run but must not
+	// be cached as authoritative.
+	Partial bool `json:"-"`
 }
 
 // SourcePackage represents a compromised package from a single source.

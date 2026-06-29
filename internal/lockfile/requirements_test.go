@@ -65,3 +65,78 @@ git+https://example.com/pkg.git
 		}
 	}
 }
+
+func TestParseRequirements_CoverageGaps(t *testing.T) {
+	content := `# a comment, not a dep
+requests==2.0.0
+requests>=2.0
+git+https://example.com/pkg.git#egg=foo
+flask
+-r base.txt
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "requirements.txt")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := DetectAndParse(path)
+	if err != nil {
+		t.Fatalf("DetectAndParse() error = %v", err)
+	}
+
+	reporter, ok := lf.(CoverageReporter)
+	if !ok {
+		t.Fatal("requirements lockfile does not implement CoverageReporter")
+	}
+	gaps := reporter.CoverageGaps()
+
+	// requests>=2.0, git+..., and bare flask each produce one gap; the clean pin,
+	// the comment and the -r line produce none.
+	if len(gaps) != 3 {
+		t.Fatalf("CoverageGaps() = %d, want 3:\n%+v", len(gaps), gaps)
+	}
+	for _, g := range gaps {
+		if g.Kind != "unpinned_dependency" {
+			t.Errorf("gap kind = %q, want unpinned_dependency", g.Kind)
+		}
+		if g.Path != path {
+			t.Errorf("gap path = %q, want %q", g.Path, path)
+		}
+	}
+
+	// the clean pin is still a real dependency
+	if len(lf.Dependencies()) != 1 {
+		t.Errorf("Dependencies() = %d, want 1 (only requests==2.0.0)", len(lf.Dependencies()))
+	}
+}
+
+func TestUnpinnedRequirement(t *testing.T) {
+	tests := []struct {
+		line      string
+		wantIsDep bool
+	}{
+		{"", false},
+		{"# comment", false},
+		{"-r base.txt", false},
+		{"-e .", false},
+		{"requests==2.0.0", false}, // a clean pin parses elsewhere
+		{"requests>=2.0", true},
+		{"ranged~=2.0", true},
+		{"git+https://example.com/p.git", true},
+		{"https://example.com/p.tar.gz", true},
+		{"flask", true},
+		{"flask ; python_version >= \"3.8\"", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			isDep, reason := unpinnedRequirement(tt.line)
+			if isDep != tt.wantIsDep {
+				t.Errorf("unpinnedRequirement(%q) isDep = %v, want %v", tt.line, isDep, tt.wantIsDep)
+			}
+			if isDep && reason == "" {
+				t.Errorf("unpinnedRequirement(%q) returned empty reason for a dep", tt.line)
+			}
+		})
+	}
+}

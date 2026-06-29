@@ -2,12 +2,28 @@
 
 ## [Unreleased]
 
+- Scan recursively by default: `supplyscan scan <path>` now finds and audits every lockfile in the tree, so pointing at a monorepo root covers all sub-packages with no flag. Use `--no-recursive` (alias `--shallow`) to scan only the top level. The `supplyscan_scan` MCP tool now defaults `recursive` to `true`
+- Remove the CLI `--recursive` / `-r` flag (recursion is now the default; pass `--no-recursive` for the old top-level-only behaviour)
+- Add workspace-aware coverage: sub-package lockfiles across a monorepo are discovered and reported per workspace
+- Report coverage gaps when something can't be audited (unpinned `requirements.txt` entries, a manifest with no lockfile). Gaps are informational by default; `--strict` turns them into a distinct exit code `3`, and a real finding (exit `2`) always takes precedence
+- Match npm IOC entries expressed as version ranges (e.g. `< 1.2.3`, `>= 1.0.0, < 2.0.0`) via semver. PyPI continues to match exact pins, enumerated version lists, and all-versions wildcards only (PEP 440 range support is a documented fast-follow)
+- Widen the DataDog TeamPCP and GitHub Advisory IOC sources to ingest PyPI (`pip`) rows alongside npm
+
+## [1.15.0](https://github.com/undont/supplyscan/compare/v1.14.0...v1.15.0)
+
 - Add PyPI / Python ecosystem support: parse `requirements.txt`, `poetry.lock`, `Pipfile.lock`, `uv.lock`, and `pdm.lock`, with PEP 503 name normalisation
 - Scope IOC matching by ecosystem (`npm` vs `pypi`) so same-named packages across registries don't collide; existing caches rekey on load
 - Widen the OSV.dev IOC source to pull the PyPI bulk zip alongside npm
 - Add cross-ecosystem vulnerability auditing via OSV.dev querybatch for non-npm dependencies (npm stays on the npm audit API), with CVSS v3 severity mapping
 - Add an `ecosystem` argument to the `check` command (`--ecosystem npm|pypi` / `-e`) and the `supplyscan_check` MCP tool
 - Add advisory-only heuristics: flag packages that run install scripts and invisible / non-ASCII characters in package names or resolved URLs
+
+## [1.14.0](https://github.com/undont/supplyscan/compare/v1.13.0...v1.14.0)
+
+- Re-release of v1.13.0 with no functional changes (release pipeline re-run on the same commit)
+
+## [1.13.0](https://github.com/undont/supplyscan/compare/v1.12.1...v1.13.0)
+
 - Add `supplyscan .` shorthand for scanning the current directory (equivalent to `supplyscan scan .`)
 
 ## [1.12.1](https://github.com/seanhalberthal/supplyscan/compare/v1.12.0...v1.12.1)

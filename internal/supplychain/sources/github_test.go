@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/undont/supplyscan/internal/types"
 )
 
 func TestGitHubAdvisorySource_Name(t *testing.T) {
@@ -65,13 +67,13 @@ func TestGitHubAdvisorySource_Fetch_Success(t *testing.T) {
 			},
 		},
 		{
-			// Non-npm advisory should be ignored
+			// PyPI (pip) malware is now retained, tagged with our pypi ecosystem.
 			GHSAID:   "GHSA-xxxx-yyyy-zzzz",
 			Severity: "high",
 			Type:     "malware",
 			Vulnerabilities: []gitHubVulnerability{
 				{
-					Package:                gitHubPackage{Ecosystem: "pip", Name: "python-malware"},
+					Package:                gitHubPackage{Ecosystem: "pip", Name: "Python-Malware"},
 					VulnerableVersionRange: "= 1.0.0",
 				},
 			},
@@ -87,9 +89,11 @@ func TestGitHubAdvisorySource_Fetch_Success(t *testing.T) {
 			t.Errorf("X-GitHub-Api-Version header = %q, want %q", r.Header.Get("X-GitHub-Api-Version"), "2022-11-28")
 		}
 
-		// Verify query parameters
-		if r.URL.Query().Get("ecosystem") != "npm" {
-			t.Errorf("ecosystem param = %q, want %q", r.URL.Query().Get("ecosystem"), "npm")
+		// Verify query parameters; both npm and pip ecosystems are queried.
+		switch eco := r.URL.Query().Get("ecosystem"); eco {
+		case "npm", "pip":
+		default:
+			t.Errorf("ecosystem param = %q, want npm or pip", eco)
 		}
 		if r.URL.Query().Get("type") != "malware" {
 			t.Errorf("type param = %q, want %q", r.URL.Query().Get("type"), "malware")
@@ -121,29 +125,45 @@ func TestGitHubAdvisorySource_Fetch_Success(t *testing.T) {
 		t.Errorf("Campaign = %q, want %q", data.Campaign, gitHubCampaign)
 	}
 
-	// Should have 2 packages (npm only, python excluded)
-	if len(data.Packages) != 2 {
-		t.Errorf("len(Packages) = %d, want 2", len(data.Packages))
+	// 2 npm packages (kept during the npm pass) + 1 pip package (kept during the
+	// pip pass); the mock returns all three advisories for both passes, so the
+	// ecosystem filter is what scopes each.
+	if len(data.Packages) != 3 {
+		t.Errorf("len(Packages) = %d, want 3", len(data.Packages))
 	}
 
-	// Check malicious-pkg
-	if pkg, ok := data.Packages["malicious-pkg"]; !ok {
-		t.Error("Packages missing 'malicious-pkg'")
-	} else {
-		if pkg.AdvisoryID != "GHSA-1234-5678-9012" {
-			t.Errorf("malicious-pkg AdvisoryID = %q, want %q", pkg.AdvisoryID, "GHSA-1234-5678-9012")
-		}
-		if pkg.Severity != "critical" {
-			t.Errorf("malicious-pkg Severity = %q, want %q", pkg.Severity, "critical")
-		}
+	// npm|malicious-pkg: ecosystem-scoped key, advisory id + severity carried through
+	mal := requirePackage(t, data.Packages, "npm|malicious-pkg")
+	if mal.AdvisoryID != "GHSA-1234-5678-9012" {
+		t.Errorf("malicious-pkg AdvisoryID = %q, want %q", mal.AdvisoryID, "GHSA-1234-5678-9012")
+	}
+	if mal.Severity != "critical" {
+		t.Errorf("malicious-pkg Severity = %q, want %q", mal.Severity, "critical")
 	}
 
-	// Check scoped package
-	if pkg, ok := data.Packages["@evil/scoped"]; !ok {
-		t.Error("Packages missing '@evil/scoped'")
-	} else if len(pkg.Versions) != 2 {
-		t.Errorf("@evil/scoped versions = %v, want 2 versions", pkg.Versions)
+	// npm|@evil/scoped: enumerated version list preserved
+	if scoped := requirePackage(t, data.Packages, "npm|@evil/scoped"); len(scoped.Versions) != 2 {
+		t.Errorf("@evil/scoped versions = %v, want 2 versions", scoped.Versions)
 	}
+
+	// pip advisory retained, PEP 503 normalised name, ecosystem-scoped key
+	pip := requirePackage(t, data.Packages, "pypi|python-malware")
+	if pip.Ecosystem != "pypi" {
+		t.Errorf("python-malware ecosystem = %q, want pypi", pip.Ecosystem)
+	}
+	if pip.Name != "python-malware" {
+		t.Errorf("python-malware name = %q, want normalised python-malware", pip.Name)
+	}
+}
+
+// requirePackage fetches a package by key or fails the test.
+func requirePackage(t *testing.T, packages map[string]types.SourcePackage, key string) types.SourcePackage {
+	t.Helper()
+	pkg, ok := packages[key]
+	if !ok {
+		t.Fatalf("Packages missing %q", key)
+	}
+	return pkg
 }
 
 func TestGitHubAdvisorySource_Fetch_WithToken(t *testing.T) {
@@ -283,6 +303,9 @@ func TestParseVersionRange(t *testing.T) {
 		{">= 0", []string{">= 0"}},
 		{"", nil},
 		{"  = 1.0.0  ", []string{"1.0.0"}},
+		// real constraints are kept intact (not split) for semver evaluation
+		{"< 1.2.3", []string{"< 1.2.3"}},
+		{">= 1.0.0, < 2.0.0", []string{">= 1.0.0, < 2.0.0"}},
 	}
 
 	for _, tt := range tests {
@@ -395,6 +418,16 @@ func TestGitHubAdvisorySource_Fetch_Pagination(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
+
+		// Only the npm ecosystem paginates here; other ecosystems (pip) return a
+		// single empty page so the test stays focused on within-ecosystem paging.
+		if r.URL.Query().Get("ecosystem") != "npm" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode([]gitHubAdvisory{})
+			return
+		}
+
 		cursor := r.URL.Query().Get("after")
 
 		var advisories []gitHubAdvisory
@@ -452,19 +485,20 @@ func TestGitHubAdvisorySource_Fetch_Pagination(t *testing.T) {
 		t.Fatalf("Fetch() error = %v", err)
 	}
 
-	if requestCount != 2 {
-		t.Errorf("Expected 2 requests for pagination, got %d", requestCount)
+	// npm paginates over 2 pages; pip is a single empty page → 3 requests total.
+	if requestCount != 3 {
+		t.Errorf("Expected 3 requests (2 npm pages + 1 pip page), got %d", requestCount)
 	}
 
-	// Should have both packages (page1 packages are same, page2 has different one)
+	// Should have both npm packages (page1 packages are same, page2 has different one)
 	if len(data.Packages) != 2 {
 		t.Errorf("len(Packages) = %d, want 2 (pkg-page1, pkg-page2)", len(data.Packages))
 	}
 
-	if _, ok := data.Packages["pkg-page1"]; !ok {
+	if _, ok := data.Packages["npm|pkg-page1"]; !ok {
 		t.Error("Missing package from page 1")
 	}
-	if _, ok := data.Packages["pkg-page2"]; !ok {
+	if _, ok := data.Packages["npm|pkg-page2"]; !ok {
 		t.Error("Missing package from page 2")
 	}
 }

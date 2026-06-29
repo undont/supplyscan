@@ -82,7 +82,7 @@ func fetchCSVSource(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // URL is the configured DataDog IOC endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch IOCs: %w", err)
 	}
@@ -168,7 +168,7 @@ func parseCSVRecord(record []string, cols csvColumns) *types.SourcePackage {
 	return &types.SourcePackage{
 		Name:     name,
 		Versions: splitAndTrim(versionsStr),
-		Severity: "critical", // All Shai-Hulud compromises are critical
+		Severity: severityCritical, // All Shai-Hulud compromises are critical
 	}
 }
 

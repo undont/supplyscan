@@ -503,29 +503,44 @@ func TestDetector_Refresh(t *testing.T) {
 func TestVersionMatches(t *testing.T) {
 	tests := []struct {
 		name             string
+		ecosystem        string
 		storedVersion    string
 		installedVersion string
 		want             bool
 	}{
 		// Exact matches
-		{"exact match", "1.0.0", "1.0.0", true},
-		{"exact mismatch", "1.0.0", "2.0.0", false},
+		{"exact match", types.EcosystemNPM, "1.0.0", "1.0.0", true},
+		{"exact mismatch", types.EcosystemNPM, "1.0.0", "2.0.0", false},
 
 		// Wildcard ranges (all versions compromised — common for typosquatting malware)
-		{"all versions >= 0", ">= 0", "1.2.3", true},
-		{"all versions >=0 no space", ">=0", "5.0.0", true},
-		{"all versions wildcard", "*", "3.0.0", true},
+		{"all versions >= 0", types.EcosystemNPM, ">= 0", "1.2.3", true},
+		{"all versions >=0 no space", types.EcosystemNPM, ">=0", "5.0.0", true},
+		{"all versions wildcard", types.EcosystemNPM, "*", "3.0.0", true},
+		{"empty stored is all versions", types.EcosystemNPM, "", "1.0.0", true},
 
-		// Should not match unrecognised ranges (avoid false positives)
-		{"range not matched", ">= 1.0.0", "0.9.0", false},
-		{"range not matched 2", "< 2.0.0", "1.5.0", false},
-		{"empty stored", "", "1.0.0", false},
+		// npm semver range evaluation (Feature H)
+		{"npm less-than matches below", types.EcosystemNPM, "< 1.2.3", "1.0.0", true},
+		{"npm less-than excludes boundary", types.EcosystemNPM, "< 1.2.3", "1.2.3", false},
+		{"npm compound AND matches inside", types.EcosystemNPM, ">= 1.0.0, < 2.0.0", "1.5.0", true},
+		{"npm compound AND excludes outside", types.EcosystemNPM, ">= 1.0.0, < 2.0.0", "2.5.0", false},
+		{"npm gte excludes below", types.EcosystemNPM, ">= 1.0.0", "0.9.0", false},
+		{"npm unparsable constraint no match", types.EcosystemNPM, ">=abc", "1.0.0", false},
+
+		// empty ecosystem defaults to npm, so semver ranges are evaluated
+		{"empty ecosystem exact match", "", "1.0.0", "1.0.0", true},
+		{"empty ecosystem range matches", "", "< 1.2.3", "1.0.0", true},
+		{"empty ecosystem range excludes boundary", "", "< 1.2.3", "1.2.3", false},
+
+		// PyPI is exact/wildcard only — semver ranges are NOT evaluated (PEP 440 ≠ semver)
+		{"pypi exact match", types.EcosystemPyPI, "1.0.0", "1.0.0", true},
+		{"pypi wildcard matches", types.EcosystemPyPI, "*", "2.0.0", true},
+		{"pypi range not evaluated", types.EcosystemPyPI, "< 1.2.3", "1.0.0", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := versionMatches(tt.storedVersion, tt.installedVersion); got != tt.want {
-				t.Errorf("versionMatches(%q, %q) = %v, want %v", tt.storedVersion, tt.installedVersion, got, tt.want)
+			if got := versionMatches(tt.ecosystem, tt.storedVersion, tt.installedVersion); got != tt.want {
+				t.Errorf("versionMatches(%q, %q, %q) = %v, want %v", tt.ecosystem, tt.storedVersion, tt.installedVersion, got, tt.want)
 			}
 		})
 	}

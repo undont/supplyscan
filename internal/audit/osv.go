@@ -27,6 +27,10 @@ const (
 
 	// osvHydrateConcurrency bounds concurrent vuln-detail fetches.
 	osvHydrateConcurrency = 8
+
+	// osv ecosystem names, using osv.dev's exact casing.
+	osvEcosystemPyPI = "PyPI"
+	osvEcosystemNPM  = "npm"
 )
 
 // OSVClient audits dependencies for known vulnerabilities via OSV.dev, which
@@ -42,15 +46,15 @@ type OSVClient struct {
 // OSVOption configures an OSVClient.
 type OSVOption func(*OSVClient)
 
-// withOSVHTTPClient sets a custom HTTP client.
-func withOSVHTTPClient(c *http.Client) OSVOption {
+// WithOSVHTTPClient sets a custom HTTP client.
+func WithOSVHTTPClient(c *http.Client) OSVOption {
 	return func(client *OSVClient) {
 		client.httpClient = c
 	}
 }
 
-// withOSVURLs sets custom query and vuln endpoints (for testing).
-func withOSVURLs(queryURL, vulnURL string) OSVOption {
+// WithOSVURLs sets custom query and vuln endpoints (for testing).
+func WithOSVURLs(queryURL, vulnURL string) OSVOption {
 	return func(client *OSVClient) {
 		client.queryURL = queryURL
 		client.vulnURL = vulnURL
@@ -74,9 +78,9 @@ func NewOSVClient(opts ...OSVOption) *OSVClient {
 func osvAuditEcosystem(ecosystem string) string {
 	switch strings.ToLower(ecosystem) {
 	case types.EcosystemPyPI:
-		return "PyPI"
+		return osvEcosystemPyPI
 	case "", types.EcosystemNPM:
-		return "npm"
+		return osvEcosystemNPM
 	default:
 		return ecosystem
 	}
@@ -193,7 +197,7 @@ func (c *OSVClient) queryBatch(ctx context.Context, deps []types.Dependency) ([]
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL is the configured OSV endpoint
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("OSV query failed: %w", err)
 	}
@@ -276,7 +280,7 @@ func (c *OSVClient) fetchVuln(ctx context.Context, id string) (*osvVulnDetail, e
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL is the configured OSV endpoint
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +356,7 @@ func osvSeverity(detail *osvVulnDetail, dep *types.Dependency) string {
 	if best != "" {
 		return best
 	}
-	return "unknown"
+	return types.SeverityUnknown
 }
 
 // databaseSpecificSeverity extracts a "severity" string from a database_specific
@@ -403,7 +407,7 @@ func matchingAffected(detail *osvVulnDetail, dep *types.Dependency) *osvAffected
 			continue
 		}
 		name := aff.Package.Name
-		if wantEco == "PyPI" {
+		if wantEco == osvEcosystemPyPI {
 			name = types.NormalizePyPIName(name)
 		}
 		if name == wantName {
