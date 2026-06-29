@@ -651,3 +651,124 @@ func BenchmarkScan(b *testing.B) {
 		}
 	}
 }
+
+func TestScan_DeterministicOrder(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"a/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/a":{"version":"1.0.0"}}}`,
+		"b/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/b":{"version":"1.0.0"}}}`,
+		"c/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/c":{"version":"1.0.0"}}}`,
+		"d/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/d":{"version":"1.0.0"}}}`,
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	order := func() []string {
+		result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+		if err != nil {
+			t.Fatalf("Scan() error = %v", err)
+		}
+		paths := make([]string, len(result.Lockfiles))
+		for i, lf := range result.Lockfiles {
+			paths[i] = lf.Path
+		}
+		return paths
+	}
+
+	first := order()
+	if len(first) != 4 {
+		t.Fatalf("expected 4 lockfiles, got %d", len(first))
+	}
+	// stable path order (lexical) across repeated runs despite concurrent scanning
+	for i := 1; i < len(first); i++ {
+		if first[i-1] > first[i] {
+			t.Errorf("lockfiles not in stable path order: %q before %q", first[i-1], first[i])
+		}
+	}
+	for run := 0; run < 3; run++ {
+		next := order()
+		if len(next) != len(first) {
+			t.Fatalf("run %d: length changed %d -> %d", run, len(first), len(next))
+		}
+		for i := range first {
+			if next[i] != first[i] {
+				t.Errorf("run %d: order changed at %d: %q != %q", run, i, next[i], first[i])
+			}
+		}
+	}
+}
+
+func TestScan_SurfacesSkippedLockfiles(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"package-lock.json":     `{invalid json`,
+		"sub/package-lock.json": `{"lockfileVersion":3,"packages":{"node_modules/pkg":{"version":"1.0.0"}}}`,
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if result.Summary.LockfilesScanned != 1 {
+		t.Errorf("LockfilesScanned = %d, want 1", result.Summary.LockfilesScanned)
+	}
+	if result.Summary.LockfilesSkipped != 1 {
+		t.Errorf("LockfilesSkipped = %d, want 1", result.Summary.LockfilesSkipped)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("Skipped count = %d, want 1", len(result.Skipped))
+	}
+	if result.Skipped[0].Reason == "" {
+		t.Error("skipped lockfile has empty reason")
+	}
+	if filepath.Base(result.Skipped[0].Path) != "package-lock.json" {
+		t.Errorf("skipped path = %q, want the malformed package-lock.json", result.Skipped[0].Path)
+	}
+	// the malformed lockfile is surfaced as skipped, not scanned: it adds no entry
+	// to the scanned set
+	if len(result.Lockfiles) != 1 {
+		t.Errorf("Lockfiles (scanned) = %d, want 1 (malformed one is skipped, not scanned)", len(result.Lockfiles))
+	}
+}
+
+func TestScan_AggregatesCoverageGaps(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"pyapp/requirements.txt": "flask\n",          // unpinned → 1 unpinned_dependency gap
+		"jsapp/package.json":     `{"name":"jsapp"}`, // no JS lockfile → 1 manifest gap
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := scanner.Scan(ScanOptions{Path: projectDir, Recursive: true, IncludeDev: true})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if result.Summary.CoverageGaps != len(result.Coverage) {
+		t.Errorf("Summary.CoverageGaps = %d, but len(Coverage) = %d", result.Summary.CoverageGaps, len(result.Coverage))
+	}
+	if len(result.Coverage) != 2 {
+		t.Fatalf("Coverage count = %d, want 2:\n%+v", len(result.Coverage), result.Coverage)
+	}
+
+	kinds := map[string]int{}
+	for _, g := range result.Coverage {
+		kinds[g.Kind]++
+	}
+	if kinds["unpinned_dependency"] != 1 {
+		t.Errorf("unpinned_dependency gaps = %d, want 1", kinds["unpinned_dependency"])
+	}
+	if kinds["manifest_without_lockfile"] != 1 {
+		t.Errorf("manifest_without_lockfile gaps = %d, want 1", kinds["manifest_without_lockfile"])
+	}
+}

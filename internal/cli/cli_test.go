@@ -136,16 +136,29 @@ func captureStderr(f func()) string {
 
 func TestParseScanFlags(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantRec bool
-		wantDev bool
+		name       string
+		args       []string
+		wantRec    bool
+		wantDev    bool
+		wantStrict bool
 	}{
 		{
 			name:    "no flags",
 			args:    []string{},
-			wantRec: false,
+			wantRec: true, // recursive is now the default
 			wantDev: true, // Default includes dev
+		},
+		{
+			name:    "no-recursive opt-out",
+			args:    []string{"--no-recursive"},
+			wantRec: false,
+			wantDev: true,
+		},
+		{
+			name:    "shallow alias",
+			args:    []string{"--shallow"},
+			wantRec: false,
+			wantDev: true,
 		},
 		{
 			name:    "recursive long",
@@ -162,6 +175,12 @@ func TestParseScanFlags(t *testing.T) {
 		{
 			name:    "no-dev",
 			args:    []string{"--no-dev"},
+			wantRec: true, // recursive default unaffected by --no-dev
+			wantDev: false,
+		},
+		{
+			name:    "no-recursive with no-dev",
+			args:    []string{"--no-recursive", "--no-dev"},
 			wantRec: false,
 			wantDev: false,
 		},
@@ -183,6 +202,13 @@ func TestParseScanFlags(t *testing.T) {
 			wantRec: true,
 			wantDev: true,
 		},
+		{
+			name:       "strict flag",
+			args:       []string{"--strict"},
+			wantRec:    true,
+			wantDev:    true,
+			wantStrict: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -193,6 +219,9 @@ func TestParseScanFlags(t *testing.T) {
 			}
 			if opts.IncludeDev != tt.wantDev {
 				t.Errorf("IncludeDev = %v, want %v", opts.IncludeDev, tt.wantDev)
+			}
+			if opts.Strict != tt.wantStrict {
+				t.Errorf("Strict = %v, want %v", opts.Strict, tt.wantStrict)
 			}
 		})
 	}
@@ -269,7 +298,7 @@ func TestPrintUsage(t *testing.T) {
 		"scan",
 		"check",
 		"refresh",
-		"--recursive",
+		"--no-recursive",
 		"--json",
 	}
 

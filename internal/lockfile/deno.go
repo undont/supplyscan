@@ -15,7 +15,7 @@ type denoLockfile struct {
 }
 
 func (l *denoLockfile) Type() string {
-	return "deno"
+	return typeDeno
 }
 
 func (l *denoLockfile) Path() string {

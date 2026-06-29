@@ -16,7 +16,7 @@ type pnpmLockfile struct {
 }
 
 func (l *pnpmLockfile) Type() string {
-	return "pnpm"
+	return typePnpm
 }
 
 func (l *pnpmLockfile) Path() string {

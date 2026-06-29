@@ -16,7 +16,7 @@ type bunLockfile struct {
 }
 
 func (l *bunLockfile) Type() string {
-	return "bun"
+	return typeBun
 }
 
 func (l *bunLockfile) Path() string {

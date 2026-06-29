@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	npmType             = "npm"
 	packageLockJSON     = "package-lock.json"
 	packageLockJSONPath = "../../testdata/npm-v3/package-lock.json"
 )
@@ -53,8 +52,8 @@ func TestDetectAndParse_NPMv3(t *testing.T) {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != npmType {
-		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
+	if lf.Type() != "npm" {
+		t.Errorf("Type() = %v, want npm", lf.Type())
 	}
 
 	deps := lf.Dependencies()
@@ -103,8 +102,8 @@ func TestDetectAndParse_NPMv2(t *testing.T) {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != npmType {
-		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
+	if lf.Type() != "npm" {
+		t.Errorf("Type() = %v, want npm", lf.Type())
 	}
 
 	deps := lf.Dependencies()
@@ -130,8 +129,8 @@ func TestDetectAndParse_NPMv1(t *testing.T) {
 		t.Fatalf("DetectAndParse() error = %v", err)
 	}
 
-	if lf.Type() != npmType {
-		t.Errorf("Type() = %v, want %s", lf.Type(), npmType)
+	if lf.Type() != "npm" {
+		t.Errorf("Type() = %v, want npm", lf.Type())
 	}
 
 	deps := lf.Dependencies()
@@ -919,6 +918,219 @@ func TestSortDependencies(t *testing.T) {
 	for i := 1; i < len(deps); i++ {
 		if deps[i-1].Name > deps[i].Name {
 			t.Errorf("Dependencies not sorted: %s > %s", deps[i-1].Name, deps[i].Name)
+		}
+	}
+}
+
+func TestFindLockfiles_SkipsFixtureDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Lockfiles in scope-guard dirs must NOT be discovered.
+	for _, dir := range []string{"fixtures", "testdata", "examples", "example", "__fixtures__", "__tests__"} {
+		sub := filepath.Join(tmpDir, dir)
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sub, "package-lock.json"), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A lockfile in a normal subdir IS discovered.
+	normal := filepath.Join(tmpDir, "packages", "app")
+	if err := os.MkdirAll(normal, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(normal, "package-lock.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockfiles, err := FindLockfiles(tmpDir, true)
+	if err != nil {
+		t.Fatalf("FindLockfiles() error = %v", err)
+	}
+	if len(lockfiles) != 1 {
+		t.Errorf("FindLockfiles() found %d files, want 1 (fixture/example dirs should be skipped)", len(lockfiles))
+	}
+}
+
+func TestFindLockfiles_RootExemption(t *testing.T) {
+	// Scanning a directory literally named "fixtures" as the target still finds
+	// its lockfile — the skip set never applies to the root itself.
+	tmpDir := t.TempDir()
+	root := filepath.Join(tmpDir, "fixtures")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package-lock.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockfiles, err := FindLockfiles(root, true)
+	if err != nil {
+		t.Fatalf("FindLockfiles() error = %v", err)
+	}
+	if len(lockfiles) != 1 {
+		t.Errorf("FindLockfiles() found %d files, want 1 (root named 'fixtures' is exempt)", len(lockfiles))
+	}
+}
+
+func TestFindUnlockedManifests(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mkdir := func(parts ...string) string {
+		d := filepath.Join(append([]string{tmpDir}, parts...)...)
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	write := func(dir, name string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// gap: package.json with no JS lockfile
+	jsGap := mkdir("js-no-lock")
+	write(jsGap, "package.json")
+
+	// no gap: package.json + package-lock.json
+	jsOK := mkdir("js-locked")
+	write(jsOK, "package.json")
+	write(jsOK, "package-lock.json")
+
+	// gap: pyproject.toml with no Python lockfile
+	pyGap := mkdir("py-no-lock")
+	write(pyGap, "pyproject.toml")
+
+	// no gap: pyproject.toml + requirements.txt (requirements counts as a py lockfile)
+	pyOK := mkdir("py-locked")
+	write(pyOK, "pyproject.toml")
+	write(pyOK, "requirements.txt")
+
+	// scope guard: a manifest inside fixtures/ or node_modules/ produces no gap
+	fixture := mkdir("fixtures", "vuln-app")
+	write(fixture, "package.json")
+	nm := mkdir("node_modules", "dep")
+	write(nm, "package.json")
+
+	gaps, _, err := FindUnlockedManifests(tmpDir, true)
+	if err != nil {
+		t.Fatalf("FindUnlockedManifests() error = %v", err)
+	}
+
+	if len(gaps) != 2 {
+		t.Fatalf("FindUnlockedManifests() found %d gaps, want 2:\n%+v", len(gaps), gaps)
+	}
+	for _, g := range gaps {
+		if g.Kind != "manifest_without_lockfile" {
+			t.Errorf("gap kind = %q, want manifest_without_lockfile", g.Kind)
+		}
+	}
+	// deterministic order (sorted by path)
+	if !sort.SliceIsSorted(gaps, func(i, j int) bool { return gaps[i].Path < gaps[j].Path }) {
+		t.Error("gaps are not sorted by path")
+	}
+
+	gotPaths := map[string]bool{}
+	for _, g := range gaps {
+		gotPaths[g.Path] = true
+	}
+	if !gotPaths[filepath.Join(jsGap, "package.json")] {
+		t.Error("missing gap for js-no-lock/package.json")
+	}
+	if !gotPaths[filepath.Join(pyGap, "pyproject.toml")] {
+		t.Error("missing gap for py-no-lock/pyproject.toml")
+	}
+	if gotPaths[filepath.Join(jsOK, "package.json")] {
+		t.Error("js-locked should not be a gap")
+	}
+	if gotPaths[filepath.Join(pyOK, "pyproject.toml")] {
+		t.Error("py-locked (requirements.txt present) should not be a gap")
+	}
+}
+
+func TestFindUnlockedManifests_Workspaces(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	writeFile := func(content string, parts ...string) string {
+		p := filepath.Join(append([]string{tmpDir}, parts...)...)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// bun/npm/yarn array form: root package.json workspaces + bun.lock
+	bunLock := writeFile("{}", "bun", "bun.lock")
+	writeFile(`{"name":"root","workspaces":["apps/*","packages/*"]}`, "bun", "package.json")
+	bunWeb := writeFile("{}", "bun", "apps", "web", "package.json")
+	bunShared := writeFile("{}", "bun", "packages", "shared", "package.json")
+	bunDocs := writeFile("{}", "bun", "docs", "package.json") // not a member → gap
+
+	// yarn object form: {"workspaces": {"packages": [...]}}
+	yarnLock := writeFile("", "yarn", "yarn.lock")
+	writeFile(`{"name":"y","workspaces":{"packages":["mods/*"]}}`, "yarn", "package.json")
+	yarnMod := writeFile("{}", "yarn", "mods", "m", "package.json")
+
+	// pnpm: separate pnpm-workspace.yaml alongside pnpm-lock.yaml
+	pnpmLock := writeFile("", "pnpm", "pnpm-lock.yaml")
+	writeFile("packages:\n  - \"pkgs/*\"\n", "pnpm", "pnpm-workspace.yaml")
+	pnpmPkg := writeFile("{}", "pnpm", "pkgs", "a", "package.json")
+
+	// deno: deno.json workspace lists explicit member paths
+	denoLock := writeFile("{}", "deno", "deno.lock")
+	writeFile(`{"workspace":["./members/d"]}`, "deno", "deno.json")
+	denoMember := writeFile("{}", "deno", "members", "d", "package.json")
+
+	// uv: [tool.uv.workspace] members in the root pyproject.toml + uv.lock
+	uvLock := writeFile("", "uv", "uv.lock")
+	writeFile("[project]\nname = \"uv\"\n\n[tool.uv.workspace]\nmembers = [\"libs/*\"]\nexclude = [\"libs/skip\"]\n", "uv", "pyproject.toml")
+	uvLib := writeFile("[project]\nname = \"x\"\n", "uv", "libs", "x", "pyproject.toml")
+	uvSkip := writeFile("[project]\nname = \"s\"\n", "uv", "libs", "skip", "pyproject.toml") // excluded → gap
+	uvOther := writeFile("[project]\nname = \"o\"\n", "uv", "other", "pyproject.toml")       // not a member → gap
+
+	gaps, covered, err := FindUnlockedManifests(tmpDir, true)
+	if err != nil {
+		t.Fatalf("FindUnlockedManifests() error = %v", err)
+	}
+
+	wantCovered := map[string]string{
+		bunWeb:     bunLock,
+		bunShared:  bunLock,
+		yarnMod:    yarnLock,
+		pnpmPkg:    pnpmLock,
+		denoMember: denoLock,
+		uvLib:      uvLock,
+	}
+	gotCovered := map[string]string{}
+	for _, c := range covered {
+		gotCovered[c.Manifest] = c.Lockfile
+	}
+	if len(gotCovered) != len(wantCovered) {
+		t.Fatalf("covered count = %d, want %d:\n%+v", len(gotCovered), len(wantCovered), covered)
+	}
+	for manifest, lock := range wantCovered {
+		if gotCovered[manifest] != lock {
+			t.Errorf("manifest %s covered by %q, want %q", manifest, gotCovered[manifest], lock)
+		}
+	}
+
+	wantGaps := map[string]bool{bunDocs: true, uvSkip: true, uvOther: true}
+	gotGaps := map[string]bool{}
+	for _, g := range gaps {
+		gotGaps[g.Path] = true
+	}
+	if len(gotGaps) != len(wantGaps) {
+		t.Fatalf("gap count = %d, want %d:\n%+v", len(gotGaps), len(wantGaps), gaps)
+	}
+	for p := range wantGaps {
+		if !gotGaps[p] {
+			t.Errorf("missing gap for %s", p)
 		}
 	}
 }
