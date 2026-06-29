@@ -108,46 +108,65 @@ func shouldSkipDir(name, path, rootDir string, recursive bool) bool {
 // FindLockfiles searches a directory for lockfiles.
 // If recursive is true, it searches subdirectories as well.
 func FindLockfiles(dir string, recursive bool) ([]string, error) {
-	// Validate the directory exists first
+	lockfiles, _, err := walkProject(dir, recursive)
+	return lockfiles, err
+}
+
+// walkProject walks dir once, collecting lockfile paths and the per-directory
+// lock/manifest/workspace state used for coverage analysis. A single walk backs
+// both FindLockfiles and the coverage analysis so a scan stats the tree once.
+func walkProject(dir string, recursive bool) (lockfiles []string, dirs map[string]*dirState, err error) {
 	info, err := os.Stat(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.IsDir() {
-		return nil, errors.New("path is not a directory")
+		return nil, nil, errors.New("path is not a directory")
 	}
 
-	var lockfiles []string
+	dirs = make(map[string]*dirState)
+	state := func(d string) *dirState {
+		s := dirs[d]
+		if s == nil {
+			s = &dirState{}
+			dirs[d] = s
+		}
+		return s
+	}
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // Skip inaccessible paths within the directory
+			return nil // skip inaccessible paths within the directory
 		}
-
 		if d.IsDir() {
 			if shouldSkipDir(d.Name(), path, dir, recursive) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-
-		if isLockfile(d.Name()) {
+		name, parent := d.Name(), filepath.Dir(path)
+		switch kind, ok := lockfileRegistry[name]; {
+		case ok && kind.ecosystem == ecoJS:
 			lockfiles = append(lockfiles, path)
+			state(parent).jsLock = path
+		case ok && kind.ecosystem == ecoPy:
+			lockfiles = append(lockfiles, path)
+			state(parent).pyLock = path
+		case mapHas(jsManifestNames, name):
+			state(parent).jsManifest = path
+		case mapHas(pyManifestNames, name):
+			state(parent).pyManifest = path
+		case name == pnpmWorkspaceFile:
+			state(parent).pnpmWorkspace = path
+		case name == denoConfigFile || name == denoConfigFileC:
+			state(parent).denoConfig = path
 		}
 		return nil
 	}
-
 	if err := filepath.WalkDir(dir, walkFn); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return lockfiles, nil
-}
-
-// isLockfile checks if a filename is a recognised lockfile.
-func isLockfile(filename string) bool {
-	_, ok := lockfileRegistry[filename]
-	return ok
+	return lockfiles, dirs, nil
 }
 
 // CoverageReporter is implemented by parsers that can report dependency sources
@@ -176,97 +195,72 @@ type dirState struct {
 // via that root); the rest are coverage gaps that cannot be audited. It honours
 // the same skip rules as FindLockfiles.
 func FindUnlockedManifests(dir string, recursive bool) (gaps []types.CoverageGap, covered []types.WorkspaceCoverage, err error) {
-	info, err := os.Stat(dir)
+	_, gaps, covered, err = Discover(dir, recursive)
+	return gaps, covered, err
+}
+
+// Discover walks dir once and returns the lockfile paths to scan together with
+// the workspace-aware coverage classification. It is the single-walk equivalent
+// of FindLockfiles followed by FindUnlockedManifests, so the scanner stats the
+// tree only once.
+func Discover(dir string, recursive bool) (lockfiles []string, gaps []types.CoverageGap, covered []types.WorkspaceCoverage, err error) {
+	lockfiles, dirs, err := walkProject(dir, recursive)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if !info.IsDir() {
-		return nil, nil, errors.New("path is not a directory")
-	}
-
-	dirs := make(map[string]*dirState)
-	state := func(d string) *dirState {
-		s := dirs[d]
-		if s == nil {
-			s = &dirState{}
-			dirs[d] = s
-		}
-		return s
-	}
-
-	walkFn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if shouldSkipDir(d.Name(), path, dir, recursive) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		name, parent := d.Name(), filepath.Dir(path)
-		switch kind, ok := lockfileRegistry[name]; {
-		case ok && kind.ecosystem == ecoJS:
-			state(parent).jsLock = path
-		case ok && kind.ecosystem == ecoPy:
-			state(parent).pyLock = path
-		case mapHas(jsManifestNames, name):
-			state(parent).jsManifest = path
-		case mapHas(pyManifestNames, name):
-			state(parent).pyManifest = path
-		case name == pnpmWorkspaceFile:
-			state(parent).pnpmWorkspace = path
-		case name == denoConfigFile || name == denoConfigFileC:
-			state(parent).denoConfig = path
-		}
-		return nil
-	}
-	if err := filepath.WalkDir(dir, walkFn); err != nil {
-		return nil, nil, err
-	}
-
 	gaps, covered = unlockedManifestGaps(filepath.Clean(dir), dirs)
 	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Path < gaps[j].Path })                  // deterministic
 	sort.Slice(covered, func(i, j int) bool { return covered[i].Manifest < covered[j].Manifest }) // deterministic
-	return gaps, covered, nil
+	return lockfiles, gaps, covered, nil
 }
 
 const kindManifestWithoutLockfile = "manifest_without_lockfile"
 
+// ecoCoverage describes how to evaluate manifest coverage for one ecosystem:
+// where its lockfile, manifest and workspace globs live, and the gap message to
+// emit when a manifest is left unaudited. Adding an ecosystem is one table entry.
+type ecoCoverage struct {
+	manifestOf func(*dirState) string
+	lockOf     func(*dirState) string
+	globsOf    func(*dirState) []string
+	gapDetail  string
+}
+
+var ecoCoverages = []ecoCoverage{
+	{
+		manifestOf: func(s *dirState) string { return s.jsManifest },
+		lockOf:     func(s *dirState) string { return s.jsLock },
+		globsOf:    (*dirState).jsWorkspaceGlobs,
+		gapDetail:  "package.json present but no JS lockfile; dependencies not audited",
+	},
+	{
+		manifestOf: func(s *dirState) string { return s.pyManifest },
+		lockOf:     func(s *dirState) string { return s.pyLock },
+		globsOf:    (*dirState).pyWorkspaceGlobs,
+		gapDetail:  "Python manifest present but no lockfile; dependencies not audited",
+	},
+}
+
 // unlockedManifestGaps splits manifests with no co-located lockfile into those
 // covered by a workspace root and those that are genuine coverage gaps.
 func unlockedManifestGaps(root string, dirs map[string]*dirState) (gaps []types.CoverageGap, covered []types.WorkspaceCoverage) {
-	jsCache, pyCache := map[string][]string{}, map[string][]string{}
-	jsGlobs := func(a string) []string { return cachedGlobs(jsCache, a, dirs[a].jsWorkspaceGlobs) }
-	pyGlobs := func(a string) []string { return cachedGlobs(pyCache, a, dirs[a].pyWorkspaceGlobs) }
-
-	for d, s := range dirs {
-		if s.jsManifest != "" && s.jsLock == "" {
-			if lock, ok := coveringLock(root, dirs, d, jsLockOf, jsGlobs); ok {
-				covered = append(covered, types.WorkspaceCoverage{Manifest: s.jsManifest, Lockfile: lock})
-			} else {
-				gaps = append(gaps, types.CoverageGap{
-					Path: s.jsManifest, Kind: kindManifestWithoutLockfile,
-					Detail: "package.json present but no JS lockfile; dependencies not audited",
-				})
+	for _, eco := range ecoCoverages {
+		cache := map[string][]string{}
+		globs := func(a string) []string { return cachedGlobs(cache, a, func() []string { return eco.globsOf(dirs[a]) }) }
+		for d, s := range dirs {
+			manifest := eco.manifestOf(s)
+			if manifest == "" || eco.lockOf(s) != "" {
+				continue
 			}
-		}
-		if s.pyManifest != "" && s.pyLock == "" {
-			if lock, ok := coveringLock(root, dirs, d, pyLockOf, pyGlobs); ok {
-				covered = append(covered, types.WorkspaceCoverage{Manifest: s.pyManifest, Lockfile: lock})
+			if lock, ok := coveringLock(root, dirs, d, eco.lockOf, globs); ok {
+				covered = append(covered, types.WorkspaceCoverage{Manifest: manifest, Lockfile: lock})
 			} else {
-				gaps = append(gaps, types.CoverageGap{
-					Path: s.pyManifest, Kind: kindManifestWithoutLockfile,
-					Detail: "Python manifest present but no lockfile; dependencies not audited",
-				})
+				gaps = append(gaps, types.CoverageGap{Path: manifest, Kind: kindManifestWithoutLockfile, Detail: eco.gapDetail})
 			}
 		}
 	}
 	return gaps, covered
 }
-
-func jsLockOf(s *dirState) string { return s.jsLock }
-func pyLockOf(s *dirState) string { return s.pyLock }
 
 func cachedGlobs(cache map[string][]string, dir string, compute func() []string) []string {
 	if g, ok := cache[dir]; ok {

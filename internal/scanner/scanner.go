@@ -79,9 +79,10 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 	_ = s.detector.EnsureLoaded()
 	timing.IOCLoadMs = time.Since(iocStart).Milliseconds()
 
-	// Find lockfiles
+	// Discover lockfiles and the workspace-aware coverage classification in a
+	// single tree walk.
 	findStart := time.Now()
-	lockfilePaths, err := lockfile.FindLockfiles(opts.Path, opts.Recursive)
+	lockfilePaths, manifestGaps, workspaceCovered, err := lockfile.Discover(opts.Path, opts.Recursive)
 	timing.FindLockfilesMs = time.Since(findStart).Milliseconds()
 	if err != nil {
 		return nil, err
@@ -141,10 +142,8 @@ func (s *defaultScanner) Scan(opts ScanOptions) (*types.ScanResult, error) {
 
 	// Manifest gaps are a whole-tree concern, independent of the per-lockfile fan-out.
 	// Workspace members covered by a root lockfile are reported separately, not as gaps.
-	if manifestGaps, covered, err := lockfile.FindUnlockedManifests(opts.Path, opts.Recursive); err == nil {
-		result.Coverage = append(result.Coverage, manifestGaps...)
-		result.WorkspaceCoverage = append(result.WorkspaceCoverage, covered...)
-	}
+	result.Coverage = append(result.Coverage, manifestGaps...)
+	result.WorkspaceCoverage = append(result.WorkspaceCoverage, workspaceCovered...)
 	result.Summary.CoverageGaps = len(result.Coverage)
 
 	// Update issue counts

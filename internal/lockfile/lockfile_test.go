@@ -39,8 +39,8 @@ func TestIsLockfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filename, func(t *testing.T) {
-			if got := isLockfile(tt.filename); got != tt.want {
-				t.Errorf("IsLockfile(%q) = %v, want %v", tt.filename, got, tt.want)
+			if _, got := lockfileRegistry[tt.filename]; got != tt.want {
+				t.Errorf("lockfileRegistry[%q] present = %v, want %v", tt.filename, got, tt.want)
 			}
 		})
 	}
@@ -1048,6 +1048,39 @@ func TestFindUnlockedManifests(t *testing.T) {
 	}
 	if gotPaths[filepath.Join(pyOK, "pyproject.toml")] {
 		t.Error("py-locked (requirements.txt present) should not be a gap")
+	}
+}
+
+func TestFindUnlockedManifests_NonRecursive(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mkdir := func(parts ...string) string {
+		d := filepath.Join(append([]string{tmpDir}, parts...)...)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	write := func(dir, name string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// gap at the root itself
+	write(tmpDir, "package.json")
+	// gap in a subdirectory — must be ignored in non-recursive mode
+	write(mkdir("sub"), "package.json")
+
+	gaps, _, err := FindUnlockedManifests(tmpDir, false)
+	if err != nil {
+		t.Fatalf("FindUnlockedManifests() error = %v", err)
+	}
+	if len(gaps) != 1 {
+		t.Fatalf("non-recursive FindUnlockedManifests() found %d gaps, want 1 (root only):\n%+v", len(gaps), gaps)
+	}
+	if gaps[0].Path != filepath.Join(tmpDir, "package.json") {
+		t.Errorf("gap path = %q, want root package.json", gaps[0].Path)
 	}
 }
 
