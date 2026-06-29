@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	semver "github.com/Masterminds/semver/v3"
-
 	"github.com/undont/supplyscan/internal/types"
 )
 
@@ -267,91 +265,6 @@ func TestConvertBulkAdvisories_ExcludesPatchedVersions(t *testing.T) {
 	if len(findings) != 2 {
 		t.Errorf("Expected 2 findings, got %d", len(findings))
 	}
-}
-
-func TestParseVulnerableRange(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		wantNil bool
-	}{
-		{"empty string returns nil", "", true},
-		{"simple less-than", "<3.1.3", false},
-		{"simple greater-or-equal", ">=2.0.0", false},
-		{"compound OR range", "<3.1.3 || >=4.0.0 <5.1.7", false},
-		{"single version constraint", "1.0.0", false},
-		{"malformed range returns nil", ">=abc", true},
-		{"incomplete operator returns nil", "<", true},
-		{"nonsense string returns nil", "not-a-range", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := parseVulnerableRange(tt.input)
-			if tt.wantNil && c != nil {
-				t.Errorf("parseVulnerableRange(%q) = non-nil, want nil", tt.input)
-			}
-			if !tt.wantNil && c == nil {
-				t.Errorf("parseVulnerableRange(%q) = nil, want constraint", tt.input)
-			}
-		})
-	}
-}
-
-func TestIsVersionVulnerable(t *testing.T) {
-	lessThan3 := mustConstraint(t, "<3.0.5")
-	compoundOR := mustConstraint(t, "<3.1.3 || >=4.0.0 <5.1.7")
-
-	tests := []struct {
-		name       string
-		version    string
-		constraint *semver.Constraints
-		want       bool
-	}{
-		// nil constraint fallback (safe default)
-		{"nil constraint returns true", "1.0.0", nil, true},
-		{"nil constraint with any version", "99.99.99", nil, true},
-
-		// unparseable version fallback (safe default)
-		{"unparseable version returns true", "latest", lessThan3, true},
-		{"non-semver version returns true", "linked", lessThan3, true},
-		{"empty version returns true", "", lessThan3, true},
-
-		// simple range matching
-		{"vulnerable version matches", "3.0.4", lessThan3, true},
-		{"patched version does not match", "3.0.5", lessThan3, false},
-		{"version above range does not match", "4.0.0", lessThan3, false},
-
-		// compound OR range
-		{"first OR branch vulnerable", "3.0.4", compoundOR, true},
-		{"first OR branch patched", "3.1.3", compoundOR, false},
-		{"second OR branch vulnerable", "5.1.6", compoundOR, true},
-		{"second OR branch patched", "5.1.7", compoundOR, false},
-		{"above all ranges", "9.0.6", compoundOR, false},
-
-		// pre-release versions — Masterminds/semver does not match pre-release
-		// against constraints without pre-release tags (standard SemVer behaviour)
-		{"pre-release not matched by simple range", "3.0.5-alpha.1", lessThan3, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isVersionVulnerable(tt.version, tt.constraint)
-			if got != tt.want {
-				t.Errorf("isVersionVulnerable(%q, constraint) = %v, want %v", tt.version, got, tt.want)
-			}
-		})
-	}
-}
-
-// mustConstraint is a test helper that parses a semver constraint or fails the test.
-func mustConstraint(t *testing.T, s string) *semver.Constraints {
-	t.Helper()
-	c, err := semver.NewConstraint(s)
-	if err != nil {
-		t.Fatalf("failed to parse constraint %q: %v", s, err)
-	}
-	return c
 }
 
 func TestConvertBulkAdvisories_NilVulnerableVersionsFallback(t *testing.T) {
@@ -668,7 +581,7 @@ func TestDoBulkAudit_InvalidEndpoint(t *testing.T) {
 		{Name: "test", Version: "1.0.0"},
 	})
 
-	_, err := c.doBulkAudit(req, []types.Dependency{{Name: "test", Version: "1.0.0"}})
+	_, err := c.doBulkAudit(req)
 	if err == nil {
 		t.Log("doBulkAudit() succeeded unexpectedly (real npm API available)")
 	}

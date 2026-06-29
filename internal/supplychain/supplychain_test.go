@@ -526,6 +526,11 @@ func TestVersionMatches(t *testing.T) {
 		{"npm gte excludes below", types.EcosystemNPM, ">= 1.0.0", "0.9.0", false},
 		{"npm unparsable constraint no match", types.EcosystemNPM, ">=abc", "1.0.0", false},
 
+		// empty ecosystem defaults to npm, so semver ranges are evaluated
+		{"empty ecosystem exact match", "", "1.0.0", "1.0.0", true},
+		{"empty ecosystem range matches", "", "< 1.2.3", "1.0.0", true},
+		{"empty ecosystem range excludes boundary", "", "< 1.2.3", "1.2.3", false},
+
 		// PyPI is exact/wildcard only — semver ranges are NOT evaluated (PEP 440 ≠ semver)
 		{"pypi exact match", types.EcosystemPyPI, "1.0.0", "1.0.0", true},
 		{"pypi wildcard matches", types.EcosystemPyPI, "*", "2.0.0", true},
