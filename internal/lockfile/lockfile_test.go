@@ -332,7 +332,7 @@ func TestParseBun_NestedDependencyKeys(t *testing.T) {
 }`
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "bun.lock")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -403,7 +403,7 @@ func TestDetectAndParse_UnknownFormat(t *testing.T) {
 	// Create a temp file with unknown name
 	tmpDir := t.TempDir()
 	unknownFile := filepath.Join(tmpDir, "unknown.lock")
-	if err := os.WriteFile(unknownFile, []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(unknownFile, []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -424,16 +424,16 @@ func TestFindLockfiles_NonRecursive(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create lockfile in root
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create lockfile in subdirectory
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(subDir, "yarn.lock"), []byte(""), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(subDir, "yarn.lock"), []byte(""), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -462,7 +462,7 @@ func TestFindLockfiles_Recursive(t *testing.T) {
 	}
 
 	for _, f := range files {
-		if err := os.MkdirAll(filepath.Dir(f), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		content := []byte("{}")
@@ -471,7 +471,7 @@ func TestFindLockfiles_Recursive(t *testing.T) {
 		} else if filepath.Ext(f) == ".yaml" {
 			content = []byte("")
 		}
-		if err := os.WriteFile(f, content, 0644); err != nil {
+		if err := os.WriteFile(f, content, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -491,15 +491,15 @@ func TestFindLockfiles_SkipsNodeModules(t *testing.T) {
 
 	// Create lockfile in node_modules (should be skipped)
 	nodeModules := filepath.Join(tmpDir, "node_modules", "some-pkg")
-	if err := os.MkdirAll(nodeModules, 0755); err != nil {
+	if err := os.MkdirAll(nodeModules, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(nodeModules, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(nodeModules, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create lockfile in root (should be found)
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -518,15 +518,15 @@ func TestFindLockfiles_SkipsHiddenDirs(t *testing.T) {
 
 	// Create lockfile in hidden directory (should be skipped)
 	hiddenDir := filepath.Join(tmpDir, ".hidden")
-	if err := os.MkdirAll(hiddenDir, 0755); err != nil {
+	if err := os.MkdirAll(hiddenDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hiddenDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hiddenDir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create lockfile in root (should be found)
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -544,7 +544,7 @@ func TestFindLockfiles_DotPath(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create lockfile in the directory
-	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -660,7 +660,7 @@ func TestParsePnpmPackageKey(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
+		t.Run(tt.key+"|"+tt.explicitVersion, func(t *testing.T) {
 			gotName, gotVersion := parsePnpmPackageKey(tt.key, tt.explicitVersion)
 			if gotName != tt.wantName || gotVersion != tt.wantVersion {
 				t.Errorf("parsePnpmPackageKey(%q, %q) = (%q, %q), want (%q, %q)",
@@ -698,7 +698,7 @@ packages:
 `
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "pnpm-lock.yaml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -784,7 +784,7 @@ func TestDependencyDeduplication(t *testing.T) {
 	}`
 
 	lockfilePath := filepath.Join(tmpDir, "package-lock.json")
-	if err := os.WriteFile(lockfilePath, []byte(lockfileContent), 0644); err != nil {
+	if err := os.WriteFile(lockfilePath, []byte(lockfileContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -873,7 +873,7 @@ func TestLockfileInterface(t *testing.T) {
 			}
 		}
 	}`
-	if err := os.WriteFile(lockfilePath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(lockfilePath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -928,20 +928,20 @@ func TestFindLockfiles_SkipsFixtureDirs(t *testing.T) {
 	// Lockfiles in scope-guard dirs must NOT be discovered.
 	for _, dir := range []string{"fixtures", "testdata", "examples", "example", "__fixtures__", "__tests__"} {
 		sub := filepath.Join(tmpDir, dir)
-		if err := os.MkdirAll(sub, 0755); err != nil {
+		if err := os.MkdirAll(sub, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(sub, "package-lock.json"), []byte("{}"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(sub, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// A lockfile in a normal subdir IS discovered.
 	normal := filepath.Join(tmpDir, "packages", "app")
-	if err := os.MkdirAll(normal, 0755); err != nil {
+	if err := os.MkdirAll(normal, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(normal, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(normal, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -959,10 +959,10 @@ func TestFindLockfiles_RootExemption(t *testing.T) {
 	// its lockfile — the skip set never applies to the root itself.
 	tmpDir := t.TempDir()
 	root := filepath.Join(tmpDir, "fixtures")
-	if err := os.MkdirAll(root, 0755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "package-lock.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "package-lock.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -980,13 +980,13 @@ func TestFindUnlockedManifests(t *testing.T) {
 
 	mkdir := func(parts ...string) string {
 		d := filepath.Join(append([]string{tmpDir}, parts...)...)
-		if err := os.MkdirAll(d, 0755); err != nil {
+		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		return d
 	}
 	write := func(dir, name string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1056,10 +1056,10 @@ func TestFindUnlockedManifests_Workspaces(t *testing.T) {
 
 	writeFile := func(content string, parts ...string) string {
 		p := filepath.Join(append([]string{tmpDir}, parts...)...)
-		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return p

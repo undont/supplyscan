@@ -617,7 +617,7 @@ func BenchmarkScan(b *testing.B) {
 		"lockfileVersion": 3,
 		"packages": {`
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if i > 0 {
 			lockfileContent += ","
 		}
@@ -643,8 +643,8 @@ func BenchmarkScan(b *testing.B) {
 
 	scanner, _ := New()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	
+	for b.Loop() {
 		_, err := scanner.Scan(ScanOptions{Path: tmpDir})
 		if err != nil {
 			fmt.Printf("Error scanning: %v\n", err)
@@ -687,7 +687,7 @@ func TestScan_DeterministicOrder(t *testing.T) {
 			t.Errorf("lockfiles not in stable path order: %q before %q", first[i-1], first[i])
 		}
 	}
-	for run := 0; run < 3; run++ {
+	for run := range 3 {
 		next := order()
 		if len(next) != len(first) {
 			t.Fatalf("run %d: length changed %d -> %d", run, len(first), len(next))

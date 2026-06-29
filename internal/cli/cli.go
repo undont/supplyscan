@@ -51,9 +51,7 @@ func Run(scan scanner.Scanner, args []string) {
 	switch args[0] {
 	case cmdStatus:
 		runStatus(scan)
-	case ".":
-		dispatchScan(scan, args)
-	case cmdScan:
+	case ".", cmdScan:
 		dispatchScan(scan, args)
 	case cmdCheck:
 		pkg, version, ecosystem, ok := parseCheckArgs(args[1:])
@@ -161,8 +159,6 @@ func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
 }
 
 // normalizeCheckEcosystem maps user-facing ecosystem aliases onto internal ids.
-//
-//nolint:goconst // inbound ecosystem aliases, not our internal ids
 func normalizeCheckEcosystem(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "pypi", "python", "pip":

@@ -142,6 +142,6 @@ func parseTeamPCPRow(record []string, cols teamPCPColumns) *types.SourcePackage 
 		Name:      name,
 		Ecosystem: ecosystem,
 		Versions:  splitAndTrim(versionsStr),
-		Severity:  "critical",
+		Severity:  severityCritical,
 	}
 }

@@ -153,7 +153,7 @@ func (s *GitHubAdvisorySource) fetchPage(ctx context.Context, client *http.Clien
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // URL is the configured GitHub advisory endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch advisories: %w", err)
 	}

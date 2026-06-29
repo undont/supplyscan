@@ -9,8 +9,6 @@ import (
 
 // severityFromLabel maps a textual severity (OSV database_specific.severity,
 // GitHub advisory severity) onto our vocabulary. Returns "" if unrecognised.
-//
-//nolint:goconst // inbound label spellings, not our severity vocabulary
 func severityFromLabel(label string) string {
 	switch strings.ToLower(strings.TrimSpace(label)) {
 	case "critical":
