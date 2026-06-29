@@ -141,6 +141,7 @@ func TestParseScanFlags(t *testing.T) {
 		wantRec    bool
 		wantDev    bool
 		wantStrict bool
+		wantTiming bool
 	}{
 		{
 			name:    "no flags",
@@ -209,6 +210,13 @@ func TestParseScanFlags(t *testing.T) {
 			wantDev:    true,
 			wantStrict: true,
 		},
+		{
+			name:       "time flag",
+			args:       []string{"--time"},
+			wantRec:    true,
+			wantDev:    true,
+			wantTiming: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -222,6 +230,9 @@ func TestParseScanFlags(t *testing.T) {
 			}
 			if opts.Strict != tt.wantStrict {
 				t.Errorf("Strict = %v, want %v", opts.Strict, tt.wantStrict)
+			}
+			if opts.ShowTiming != tt.wantTiming {
+				t.Errorf("ShowTiming = %v, want %v", opts.ShowTiming, tt.wantTiming)
 			}
 		})
 	}

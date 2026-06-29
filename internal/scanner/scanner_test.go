@@ -230,6 +230,26 @@ func TestScan_SingleLockfile(t *testing.T) {
 	}
 }
 
+func TestScan_TimingHiddenByDefault(t *testing.T) {
+	projectDir := createTestProject(t, map[string]string{
+		"package-lock.json": `{"lockfileVersion": 3, "packages": {"node_modules/lodash": {"version": "4.17.21"}}}`,
+	})
+
+	scanner, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := scanner.Scan(ScanOptions{Path: projectDir})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if result.Timing != nil {
+		t.Errorf("Timing should be nil without ShowTiming, got %+v", result.Timing)
+	}
+}
+
 func TestScan_ExcludeDevDependencies(t *testing.T) {
 	lockfileContent := `{
 		"name": "test",
