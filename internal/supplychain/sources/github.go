@@ -213,7 +213,7 @@ func extractNextCursor(linkHeader string) string {
 	}
 
 	// Parse Link header: <url>; rel="next", <url>; rel="last"
-	for _, link := range strings.Split(linkHeader, ",") {
+	for link := range strings.SplitSeq(linkHeader, ",") {
 		parts := strings.Split(strings.TrimSpace(link), ";")
 		if len(parts) < 2 {
 			continue
@@ -245,7 +245,7 @@ func parseVersionRange(versionRange string) []string {
 	}
 	enumerated := make([]string, 0)
 	allEquals := true
-	for _, part := range strings.Split(versionRange, ",") {
+	for part := range strings.SplitSeq(versionRange, ",") {
 		part = strings.TrimSpace(part)
 		if after, ok := strings.CutPrefix(part, "= "); ok {
 			enumerated = append(enumerated, strings.TrimSpace(after))
