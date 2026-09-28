@@ -473,6 +473,19 @@ packages:
 	}
 }
 
+func TestCheckPackage_InvalidPyPIName(t *testing.T) {
+	// no detector or audit clients: the name must be rejected before either is used
+	s := &defaultScanner{}
+
+	result, err := s.CheckPackage(types.EcosystemPyPI, "@litellm", "1.82.7")
+	if err == nil {
+		t.Fatalf("CheckPackage() error = nil, result = %+v; want invalid name error", result)
+	}
+	if !strings.Contains(err.Error(), `"@litellm"`) {
+		t.Errorf("error = %q, want it to name the package", err.Error())
+	}
+}
+
 func TestCheckPackage(t *testing.T) {
 	scanner, err := New()
 	if err != nil {

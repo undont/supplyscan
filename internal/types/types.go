@@ -43,6 +43,32 @@ func ParseEcosystem(s string) (string, error) {
 // pypiNameSep matches runs of the characters PEP 503 treats as equivalent.
 var pypiNameSep = regexp.MustCompile(`[-_.]+`)
 
+// pypiNamePattern is the PEP 508 project name grammar.
+var pypiNamePattern = regexp.MustCompile(`(?i)^([a-z0-9]|[a-z0-9][a-z0-9._-]*[a-z0-9])$`)
+
+// npmNamePattern is an optional "@scope/" then a name of URL-safe characters not
+// starting with "." or "_". mixed case is allowed, since older packages use it
+var npmNamePattern = regexp.MustCompile(`^(@[A-Za-z0-9~*!'()-][A-Za-z0-9._~*!'()-]*/)?[A-Za-z0-9~*!'()-][A-Za-z0-9._~*!'()-]*$`)
+
+// npmNameMaxLen is the registry's limit on a package name, scope included.
+const npmNameMaxLen = 214
+
+// ValidatePackageName rejects a name that cannot exist in the ecosystem, such as
+// an npm-style "@scope/name" checked against PyPI, or "@litellm" against npm
+func ValidatePackageName(ecosystem, name string) error {
+	switch ecosystem {
+	case EcosystemPyPI:
+		if !pypiNamePattern.MatchString(name) {
+			return fmt.Errorf("%q is not a valid PyPI package name", name)
+		}
+	case EcosystemNPM:
+		if len(name) > npmNameMaxLen || !npmNamePattern.MatchString(name) {
+			return fmt.Errorf("%q is not a valid npm package name", name)
+		}
+	}
+	return nil
+}
+
 // NormalizePyPIName applies PEP 503 normalisation: lowercase and collapse any
 // run of "-", "_" or "." into a single "-". OSV stores PyPI names normalised,
 // so we normalise lockfile names the same way for matching to line up.
