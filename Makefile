@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint lint-fix clean install fmt tidy vet check help
+.PHONY: build build-all test lint lint-fix clean install fmt tidy vet demo check help
 
 BINARY := supplyscan
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -52,6 +52,11 @@ tidy:
 vet:
 	go vet ./...
 
+demo:
+	@go build -o $(BINARY) ./cmd/supplyscan
+	@echo "binary rebuilt!"
+	@cd .demo && vhs demo.tape
+
 # Run all checks (format, tidy, vet, lint, test)
 check: fmt tidy vet lint test
 
@@ -70,5 +75,6 @@ help:
 	@echo "  fmt         Format Go code"
 	@echo "  tidy        Tidy Go modules"
 	@echo "  vet         Run go vet"
+	@echo "  demo        Recreate demo mp4 and gif"
 	@echo "  check       Run all checks (fmt, tidy, vet, lint, test)"
 	@echo "  help        Show this help message"
