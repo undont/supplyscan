@@ -8,6 +8,7 @@
 - Reject an unknown `--ecosystem` value (CLI) or `ecosystem` (MCP `supplyscan_check`) with an error instead of silently checking npm
 - Reject a package name that cannot exist in the checked ecosystem in `supplyscan check` and `supplyscan_check`, instead of reporting it clean
 - Hide timing in `supplyscan check` output unless `--time` is passed, matching `supplyscan scan`; `supplyscan_check` no longer returns timing
+- Count low, info and unknown severity vulnerabilities in the scan summary (`summary.issues` gains `low`, `info` and `unknown`); a scan finding only those no longer reports "No issues found"
 
 ## [1.17.1](https://github.com/undont/supplyscan/compare/v1.17.0...v1.17.1)
 

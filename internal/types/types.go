@@ -211,6 +211,9 @@ type IssueCounts struct {
 	Critical    int `json:"critical"`
 	High        int `json:"high"`
 	Moderate    int `json:"moderate"`
+	Low         int `json:"low"`
+	Info        int `json:"info"`
+	Unknown     int `json:"unknown"`
 	SupplyChain int `json:"supply_chain"`
 }
 

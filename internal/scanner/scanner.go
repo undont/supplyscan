@@ -352,6 +352,12 @@ func countIssues(result *types.ScanResult) types.IssueCounts {
 			counts.High++
 		case types.SeverityModerate:
 			counts.Moderate++
+		case types.SeverityLow:
+			counts.Low++
+		case types.SeverityInfo:
+			counts.Info++
+		default:
+			counts.Unknown++
 		}
 	}
 

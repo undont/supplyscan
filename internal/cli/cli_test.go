@@ -537,6 +537,21 @@ func TestRunCheck_JSON(t *testing.T) {
 	}
 }
 
+func TestPrintIssuesSummary_LowOnly(t *testing.T) {
+	output := captureOutput(func() {
+		printIssuesSummary(&types.IssueCounts{Low: 2, Unknown: 1})
+	})
+
+	if strings.Contains(output, "No issues found") {
+		t.Errorf("low/unknown-only summary claims no issues:\n%s", output)
+	}
+	for _, want := range []string{"Issues Found", "low", "unknown"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("summary missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestRunCheck_TimingOptIn(t *testing.T) {
 	for _, showTiming := range []bool{false, true} {
 		t.Run(fmt.Sprintf("time=%v", showTiming), func(t *testing.T) {

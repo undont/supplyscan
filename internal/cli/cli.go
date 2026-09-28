@@ -396,7 +396,7 @@ func printScanSummary(result *types.ScanResult) {
 }
 
 func printIssuesSummary(issues *types.IssueCounts) {
-	issueCount := issues.Critical + issues.High + issues.Moderate + issues.SupplyChain
+	issueCount := issues.Critical + issues.High + issues.Moderate + issues.Low + issues.Info + issues.Unknown + issues.SupplyChain
 	if issueCount == 0 {
 		fmt.Println(formatSuccess("No issues found"))
 		fmt.Println()
@@ -412,6 +412,15 @@ func printIssuesSummary(issues *types.IssueCounts) {
 	}
 	if issues.Moderate > 0 {
 		fmt.Printf("  %s %d\n", formatSeverity("moderate"), issues.Moderate)
+	}
+	if issues.Low > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("low"), issues.Low)
+	}
+	if issues.Info > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("info"), issues.Info)
+	}
+	if issues.Unknown > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("unknown"), issues.Unknown)
 	}
 	if issues.SupplyChain > 0 {
 		fmt.Printf("  %s %d\n", formatLabel("supply chain"), issues.SupplyChain)
