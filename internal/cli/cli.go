@@ -311,8 +311,6 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 func printScanResult(result *types.ScanResult) {
 	fmt.Println(formatHeader("Scan Results"))
 	fmt.Println(formatDivider(50))
-	fmt.Println()
-
 	printScanSummary(result)
 	printIssuesSummary(&result.Summary.Issues)
 	printSupplyChainFindings(result.SupplyChain.Findings)
