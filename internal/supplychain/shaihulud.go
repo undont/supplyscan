@@ -149,40 +149,43 @@ func (d *Detector) CheckPackage(ecosystem, name, version string) *types.SupplyCh
 	return nil
 }
 
-// checkNamespace checks if a package is from an at-risk namespace.
-// Namespaces (npm scopes) are an npm concept, so this only applies to npm.
-func (d *Detector) checkNamespace(ecosystem, name, version string) *types.SupplyChainWarning {
-	if normalizeEcosystem(ecosystem) != types.EcosystemNPM {
-		return nil
-	}
-
-	campaign, ok := lookupNamespaceCampaign(name)
-	if !ok {
-		return nil
-	}
-
+// checkPackageHistory warns when other versions of an installed package are on
+// an IOC list. Callers check CheckPackage first, so the installed version is clean
+func (d *Detector) checkPackageHistory(ecosystem, name, version string) *types.SupplyChainWarning {
 	db := d.aggregator.getDatabase()
+	if db == nil {
+		return nil
+	}
 
-	// Only warn if the package isn't already known to be compromised
-	if db != nil {
-		if pkg, exists := db.Packages[iocKey(ecosystem, name)]; exists {
-			for _, v := range pkg.Versions {
-				if versionMatches(ecosystem, v, version) {
-					return nil // Already reported as finding
-				}
-			}
-		}
+	pkg, exists := db.Packages[iocKey(ecosystem, name)]
+	if !exists || !anyReachable(ecosystem, pkg.Versions, version) {
+		return nil
 	}
 
 	return &types.SupplyChainWarning{
-		Type:             "namespace_at_risk",
-		Package:          name,
-		InstalledVersion: version,
-		Namespace:        packageScope(name),
-		Campaign:         campaign.Name,
-		CampaignWhen:     campaign.When,
-		Note:             getNamespaceWarning(name),
+		Type:                "other_versions_compromised",
+		Package:             name,
+		InstalledVersion:    version,
+		CompromisedVersions: pkg.Versions,
+		Campaigns:           pkg.Campaigns,
+		Note: "Your installed version is not on any IOC list. " +
+			"Other versions of this package were compromised; check before upgrading.",
 	}
+}
+
+// anyReachable reports whether any compromised npm version is on the installed
+// version's release line. ranges and PyPI versions can't be compared, so they count
+func anyReachable(ecosystem string, compromised []string, installed string) bool {
+	if normalizeEcosystem(ecosystem) != types.EcosystemNPM {
+		return len(compromised) > 0
+	}
+	for _, v := range compromised {
+		same, ok := semverutil.SameReleaseLine(installed, strings.TrimSpace(v))
+		if same || !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckDependencies checks a list of dependencies for supply chain issues.
@@ -197,8 +200,7 @@ func (d *Detector) CheckDependencies(deps []types.Dependency) ([]types.SupplyCha
 			continue
 		}
 
-		// Check for at-risk namespace
-		if warning := d.checkNamespace(dep.Ecosystem, dep.Name, dep.Version); warning != nil {
+		if warning := d.checkPackageHistory(dep.Ecosystem, dep.Name, dep.Version); warning != nil {
 			warnings = append(warnings, *warning)
 		}
 	}

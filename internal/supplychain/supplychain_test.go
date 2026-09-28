@@ -3,7 +3,6 @@ package supplychain
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -101,64 +100,6 @@ func createTestDetectorWithDB(t *testing.T, db *types.IOCDatabase) *Detector {
 	}
 
 	return detector
-}
-
-// Namespace tests
-func TestIsAtRiskNamespace(t *testing.T) {
-	tests := []struct {
-		packageName string
-		want        bool
-	}{
-		// At-risk namespaces
-		{"@ctrl/tinycolor", true},
-		{"@ctrl/another-pkg", true},
-		{"@nativescript-community/ui-chart", true},
-		{"@crowdstrike/falcon", true},
-		{"@asyncapi/spec", true},
-		{"@posthog/client", true},
-		{"@postman/newman", true},
-		{"@ensdomains/resolver", true},
-		{"@zapier/core", true},
-		{"@art-ws/something", true},
-		{"@ngx/forms", true},
-		// Safe namespaces
-		{"@babel/core", false},
-		{"@types/node", false},
-		{"@angular/core", false},
-		// Non-scoped packages
-		{"lodash", false},
-		{"express", false},
-		// Edge cases
-		{"@ctrl", false},    // No slash, invalid package name
-		{"ctrl/pkg", false}, // No @ prefix
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.packageName, func(t *testing.T) {
-			if got := isAtRiskNamespace(tt.packageName); got != tt.want {
-				t.Errorf("IsAtRiskNamespace(%q) = %v, want %v", tt.packageName, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGetNamespaceWarning(t *testing.T) {
-	warning := getNamespaceWarning("@ctrl/tinycolor")
-	if warning == "" {
-		t.Error("GetNamespaceWarning() returned empty string")
-	}
-	// Wording should lead with the reassurance and name the campaign so users
-	// know which past incident the scope is associated with.
-	if !strings.Contains(warning, "not on any IOC list") {
-		t.Errorf("Warning should reassure that the version isn't on an IOC list, got: %q", warning)
-	}
-	if !strings.Contains(warning, "Shai-Hulud") {
-		t.Errorf("Warning should name the campaign (Shai-Hulud for @ctrl), got: %q", warning)
-	}
-	if !strings.Contains(warning, "@ctrl") {
-		t.Errorf("Warning should name the scope (@ctrl), got: %q", warning)
-	}
 }
 
 // Detector tests
@@ -290,7 +231,7 @@ func TestDetector_CheckPackage_NilDatabase(t *testing.T) {
 	}
 }
 
-func TestDetector_CheckNamespace(t *testing.T) {
+func TestDetector_CheckPackageHistory(t *testing.T) {
 	detector := createTestDetectorWithDB(t, createTestIOCDatabase())
 
 	tests := []struct {
@@ -299,32 +240,31 @@ func TestDetector_CheckNamespace(t *testing.T) {
 		version string
 		want    bool
 	}{
-		// At-risk namespace, safe version - should warn
-		{"at-risk safe version", "@ctrl/unknown-pkg", "1.0.0", true},
-		{"at-risk another", "@posthog/analytics", "2.0.0", true},
-		// At-risk namespace, compromised version - should NOT warn (it's a finding, not warning)
-		{"at-risk compromised", "@ctrl/tinycolor", "3.4.1", false},
-		// Safe namespace - no warning
-		{"safe namespace", "@babel/core", "7.0.0", false},
-		// Non-scoped - no warning
-		{"non-scoped", "lodash", "4.17.21", false},
+		{"same major compromised", "malicious-pkg", "1.9.0", true},
+		{"scoped, same major compromised", "@ctrl/tinycolor", "3.4.0", true},
+		{"only other majors compromised", "@evil/package", "1.5.0", false},
+		{"zero major, different minor", "malicious-pkg", "0.9.0", false},
+		{"same scope, never compromised", "@ctrl/unknown-pkg", "1.0.0", false},
+		{"not in database", "lodash", "4.17.21", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			warning := detector.checkNamespace(types.EcosystemNPM, tt.pkgName, tt.version)
-			got := warning != nil
-			if got != tt.want {
-				t.Errorf("CheckNamespace(%q, %q) returned warning = %v, want %v", tt.pkgName, tt.version, got, tt.want)
+			warning := detector.checkPackageHistory(types.EcosystemNPM, tt.pkgName, tt.version)
+			if got := warning != nil; got != tt.want {
+				t.Fatalf("checkPackageHistory(%q, %q) returned warning = %v, want %v", tt.pkgName, tt.version, got, tt.want)
 			}
-
-			if warning != nil {
-				if warning.Type != "namespace_at_risk" {
-					t.Errorf("Warning type = %q, want namespace_at_risk", warning.Type)
-				}
-				if warning.Package != tt.pkgName {
-					t.Errorf("Warning package = %q, want %q", warning.Package, tt.pkgName)
-				}
+			if warning == nil {
+				return
+			}
+			if warning.Type != "other_versions_compromised" {
+				t.Errorf("Warning type = %q, want other_versions_compromised", warning.Type)
+			}
+			if warning.Package != tt.pkgName || warning.InstalledVersion != tt.version {
+				t.Errorf("Warning = %s@%s, want %s@%s", warning.Package, warning.InstalledVersion, tt.pkgName, tt.version)
+			}
+			if len(warning.CompromisedVersions) == 0 {
+				t.Error("Warning should list the compromised versions")
 			}
 		})
 	}
@@ -335,8 +275,8 @@ func TestDetector_CheckDependencies(t *testing.T) {
 
 	deps := []types.Dependency{
 		{Name: "malicious-pkg", Version: "1.0.0"},   // Compromised
-		{Name: "malicious-pkg", Version: "0.9.0"},   // Safe version of compromised pkg
-		{Name: "@ctrl/safe-pkg", Version: "1.0.0"},  // At-risk namespace
+		{Name: "malicious-pkg", Version: "1.9.0"},   // Safe version of compromised pkg
+		{Name: "@ctrl/safe-pkg", Version: "1.0.0"},  // Same scope, never compromised
 		{Name: "@ctrl/tinycolor", Version: "3.4.1"}, // Compromised (no warning, just finding)
 		{Name: "lodash", Version: "4.17.21"},        // Safe
 		{Name: "@babel/core", Version: "7.23.0"},    // Safe
@@ -349,7 +289,7 @@ func TestDetector_CheckDependencies(t *testing.T) {
 		t.Errorf("Expected 2 findings, got %d", len(findings))
 	}
 
-	// Should have 1 warning: @ctrl/safe-pkg (at-risk namespace, not compromised)
+	// Should have 1 warning: malicious-pkg@1.9.0 (same major compromised)
 	if len(warnings) != 1 {
 		t.Errorf("Expected 1 warning, got %d", len(warnings))
 	}
@@ -373,8 +313,8 @@ func TestDetector_CheckDependencies(t *testing.T) {
 	}
 
 	// Verify warning
-	if len(warnings) > 0 && warnings[0].Package != "@ctrl/safe-pkg" {
-		t.Errorf("Warning package = %q, want @ctrl/safe-pkg", warnings[0].Package)
+	if len(warnings) > 0 && warnings[0].Package != "malicious-pkg" {
+		t.Errorf("Warning package = %q, want malicious-pkg", warnings[0].Package)
 	}
 }
 
@@ -404,20 +344,6 @@ func TestDetector_GetStatus(t *testing.T) {
 	// Should have sources
 	if len(status.Sources) == 0 {
 		t.Error("Sources should not be empty")
-	}
-}
-
-func TestAtRiskNamespaces_Coverage(t *testing.T) {
-	// Verify all defined namespaces are actually checked and that each entry
-	// has campaign metadata populated.
-	for scope, campaign := range atRiskNamespaces {
-		testPkg := scope + "/test-package"
-		if !isAtRiskNamespace(testPkg) {
-			t.Errorf("isAtRiskNamespace(%q) = false, scope %q should be at-risk", testPkg, scope)
-		}
-		if campaign.Name == "" || campaign.When == "" {
-			t.Errorf("scope %q has incomplete campaign metadata: %+v", scope, campaign)
-		}
 	}
 }
 
@@ -572,27 +498,6 @@ func TestDetector_CheckPackage_WildcardVersion(t *testing.T) {
 	finding2 := detector.CheckPackage(types.EcosystemNPM, "typosquat-pkg", "99.99.99")
 	if finding2 == nil {
 		t.Error("Expected finding for typosquat-pkg@99.99.99 (all versions compromised)")
-	}
-}
-
-func TestIsAtRiskNamespace_S1ngularity(t *testing.T) {
-	// Verify s1ngularity campaign namespaces are detected
-	tests := []struct {
-		packageName string
-		want        bool
-	}{
-		{"@nx/devkit", true},
-		{"@nx/workspace", true},
-		{"@nrwl/devkit", true},
-		{"@nrwl/workspace", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.packageName, func(t *testing.T) {
-			if got := isAtRiskNamespace(tt.packageName); got != tt.want {
-				t.Errorf("isAtRiskNamespace(%q) = %v, want %v", tt.packageName, got, tt.want)
-			}
-		})
 	}
 }
 
