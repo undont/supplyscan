@@ -39,7 +39,24 @@ func (l *bunLockfile) Dependencies() []types.Dependency {
 // none of which should be treated as additional versions.
 type bunLockfileJSON struct {
 	LockfileVersion int                          `json:"lockfileVersion"`
+	Workspaces      map[string]bunWorkspace      `json:"workspaces"`
 	Packages        map[string][]json.RawMessage `json:"packages"`
+}
+
+// bunWorkspace is one entry of `workspaces`, keyed by path ("" is the root).
+type bunWorkspace struct {
+	Name                 string            `json:"name"`
+	Dependencies         map[string]string `json:"dependencies"`
+	DevDependencies      map[string]string `json:"devDependencies"`
+	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
+}
+
+// bunPackageMeta is the metadata object inside a `packages` entry.
+type bunPackageMeta struct {
+	Dependencies         map[string]string `json:"dependencies"`
+	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
 }
 
 // parseBun parses a bun.lock file.
@@ -57,8 +74,10 @@ func parseBun(path string) (Lockfile, error) {
 		return nil, err
 	}
 
+	devOnly := bunDevOnlyKeys(&lockfile)
+
 	var deps []types.Dependency
-	seen := make(map[string]bool)
+	index := make(map[string]int)
 
 	for key, entries := range lockfile.Packages {
 		// Skip workspace entries
@@ -74,15 +93,18 @@ func parseBun(path string) (Lockfile, error) {
 			continue
 		}
 
+		// one name@version can sit under several keys; it is dev only if every copy is
 		dedupKey := name + "@" + version
-		if seen[dedupKey] {
+		if i, ok := index[dedupKey]; ok {
+			deps[i].Dev = deps[i].Dev && devOnly[key]
 			continue
 		}
-		seen[dedupKey] = true
+		index[dedupKey] = len(deps)
 
 		deps = append(deps, types.Dependency{
 			Name:    name,
 			Version: version,
+			Dev:     devOnly[key],
 		})
 	}
 
@@ -165,4 +187,100 @@ func extractBunVersion(s string) string {
 	}
 
 	return s
+}
+
+// bunGraph walks `packages` the way bun resolves it: a dependency of the package
+// at key "a/b" is the first of "a/b/dep", "a/dep", "dep" present in the map
+type bunGraph struct {
+	packages map[string][]json.RawMessage
+}
+
+// bunDevOnlyKeys returns the package keys reachable from some workspace's
+// devDependencies but from no workspace's dependencies, optionalDependencies or
+// peerDependencies. keys reachable from neither stay out, so they count as prod
+func bunDevOnlyKeys(lockfile *bunLockfileJSON) map[string]bool {
+	g := bunGraph{packages: lockfile.Packages}
+	prod := make(map[string]bool)
+	dev := make(map[string]bool)
+
+	for path, ws := range lockfile.Workspaces {
+		base := bunWorkspaceBase(path, ws.Name)
+		for _, group := range []map[string]string{ws.Dependencies, ws.OptionalDependencies, ws.PeerDependencies} {
+			g.visitAll(prod, base, group)
+		}
+		g.visitAll(dev, base, ws.DevDependencies)
+	}
+
+	devOnly := make(map[string]bool)
+	for key := range dev {
+		if !prod[key] {
+			devOnly[key] = true
+		}
+	}
+	return devOnly
+}
+
+// bunWorkspaceBase is the key path a workspace's own dependencies resolve from:
+// "{name}/{dep}" before "{dep}" for a member, "{dep}" alone for the root
+func bunWorkspaceBase(path, name string) []string {
+	if path == "" || name == "" {
+		return nil
+	}
+	return []string{name}
+}
+
+func (g *bunGraph) visitAll(seen map[string]bool, from []string, deps map[string]string) {
+	for dep := range deps {
+		if next, ok := g.resolve(from, dep); ok {
+			g.visit(seen, next)
+		}
+	}
+}
+
+// visit marks the package at path and everything it depends on. a workspace
+// entry stops the walk, since every workspace is already a root of its own
+func (g *bunGraph) visit(seen map[string]bool, path []string) {
+	key := strings.Join(path, "/")
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+
+	meta, ok := g.meta(key)
+	if !ok {
+		return
+	}
+	for _, group := range []map[string]string{meta.Dependencies, meta.OptionalDependencies, meta.PeerDependencies} {
+		g.visitAll(seen, path, group)
+	}
+}
+
+func (g *bunGraph) resolve(from []string, dep string) ([]string, bool) {
+	for i := len(from); i >= 0; i-- {
+		candidate := append(append([]string{}, from[:i]...), dep)
+		if _, ok := g.packages[strings.Join(candidate, "/")]; ok {
+			return candidate, true
+		}
+	}
+	return nil, false
+}
+
+// meta returns the metadata object of a `packages` entry. its position depends
+// on the resolution kind (npm, git, tarball), and workspace entries have none
+func (g *bunGraph) meta(key string) (bunPackageMeta, bool) {
+	entries := g.packages[key]
+	if len(entries) < 2 {
+		return bunPackageMeta{}, false
+	}
+	for _, raw := range entries[1:] {
+		if len(raw) == 0 || raw[0] != '{' {
+			continue
+		}
+		var meta bunPackageMeta
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			return bunPackageMeta{}, false
+		}
+		return meta, true
+	}
+	return bunPackageMeta{}, false
 }

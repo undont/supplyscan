@@ -106,8 +106,10 @@ func TestCountIssues(t *testing.T) {
 				{Severity: "high", Package: "high-pkg1"},
 				{Severity: "high", Package: "high-pkg2"},
 				{Severity: "moderate", Package: "mod-pkg"},
-				{Severity: "low", Package: "low-pkg"},   // Not counted
-				{Severity: "info", Package: "info-pkg"}, // Not counted
+				{Severity: "low", Package: "low-pkg"},
+				{Severity: "info", Package: "info-pkg"},
+				{Severity: "unknown", Package: "unknown-pkg"},
+				{Severity: "", Package: "unrated-pkg"},
 			},
 		},
 	}
@@ -125,6 +127,15 @@ func TestCountIssues(t *testing.T) {
 	}
 	if counts.Moderate != 1 {
 		t.Errorf("Moderate = %d, want 1", counts.Moderate)
+	}
+	if counts.Low != 1 {
+		t.Errorf("Low = %d, want 1", counts.Low)
+	}
+	if counts.Info != 1 {
+		t.Errorf("Info = %d, want 1", counts.Info)
+	}
+	if counts.Unknown != 2 {
+		t.Errorf("Unknown = %d, want 2 (unknown and unrated)", counts.Unknown)
 	}
 }
 
@@ -470,6 +481,19 @@ packages:
 		if !typeMap[et] {
 			t.Errorf("Expected lockfile type %q not found", et)
 		}
+	}
+}
+
+func TestCheckPackage_InvalidPyPIName(t *testing.T) {
+	// no detector or audit clients: the name must be rejected before either is used
+	s := &defaultScanner{}
+
+	result, err := s.CheckPackage(types.EcosystemPyPI, "@litellm", "1.82.7")
+	if err == nil {
+		t.Fatalf("CheckPackage() error = nil, result = %+v; want invalid name error", result)
+	}
+	if !strings.Contains(err.Error(), `"@litellm"`) {
+		t.Errorf("error = %q, want it to name the package", err.Error())
 	}
 }
 

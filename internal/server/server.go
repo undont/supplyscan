@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -162,17 +161,6 @@ func handleScan(_ context.Context, _ *mcp.CallToolRequest, input scanInput) (*mc
 	return nil, output, nil
 }
 
-// normalizeEcosystem maps the MCP ecosystem input onto an internal id, defaulting
-// to npm and treating "python"/"pip" as aliases for pypi.
-func normalizeEcosystem(ecosystem string) string {
-	switch strings.ToLower(strings.TrimSpace(ecosystem)) {
-	case "pypi", "python", "pip":
-		return types.EcosystemPyPI
-	default:
-		return types.EcosystemNPM
-	}
-}
-
 func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*mcp.CallToolResult, checkOutput, error) {
 	if input.Package == "" {
 		return nil, checkOutput{}, fmt.Errorf("package is required")
@@ -181,11 +169,17 @@ func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*
 		return nil, checkOutput{}, fmt.Errorf("version is required")
 	}
 
-	result, err := scan.CheckPackage(normalizeEcosystem(input.Ecosystem), input.Package, input.Version)
+	ecosystem, err := types.ParseEcosystem(input.Ecosystem)
 	if err != nil {
 		return nil, checkOutput{}, err
 	}
 
+	result, err := scan.CheckPackage(ecosystem, input.Package, input.Version)
+	if err != nil {
+		return nil, checkOutput{}, err
+	}
+
+	result.Timing = nil // timing is CLI-only (--time), as for scan
 	output := checkOutput{CheckResult: *result}
 
 	// Return FindingsError if vulnerabilities or supply chain compromises were found

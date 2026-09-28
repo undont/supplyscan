@@ -20,18 +20,22 @@ func TestParseCheckArgs(t *testing.T) {
 		{"ecosystem equals form", []string{"litellm", "1.82.7", "--ecosystem=pypi"}, "litellm", "1.82.7", types.EcosystemPyPI, true},
 		{"python alias", []string{"--ecosystem", "python", "requests", "2.0.0"}, "requests", "2.0.0", types.EcosystemPyPI, true},
 		{"short flag before positionals", []string{"-e", "pypi", "flask", "2.0.1"}, "flask", "2.0.1", types.EcosystemPyPI, true},
-		{"unknown ecosystem falls back to npm", []string{"x", "1.0.0", "--ecosystem", "rubygems"}, "x", "1.0.0", types.EcosystemNPM, true},
+		{"explicit npm", []string{"lodash", "4.17.21", "-e", "npm"}, "lodash", "4.17.21", types.EcosystemNPM, true},
+		{"unknown ecosystem", []string{"x", "1.0.0", "--ecosystem", "rubygems"}, "", "", "", false},
+		{"misspelt ecosystem", []string{"django", "2.2.0", "-e", "pypy"}, "", "", "", false},
+		{"time flag is not positional", []string{"lodash", "--time", "4.17.21"}, "lodash", "4.17.21", types.EcosystemNPM, true},
 		{"missing version", []string{"lodash"}, "", "", "", false},
 		{"dangling ecosystem flag", []string{"lodash", "1.0.0", "--ecosystem"}, "", "", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pkg, ver, eco, ok := parseCheckArgs(tt.args)
-			if ok != tt.wantOk {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOk)
+			opts, err := parseCheckArgs(tt.args)
+			pkg, ver, eco := opts.Package, opts.Version, opts.Ecosystem
+			if ok := err == nil; ok != tt.wantOk {
+				t.Fatalf("err = %v, want ok %v", err, tt.wantOk)
 			}
-			if !ok {
+			if err != nil {
 				return
 			}
 			if pkg != tt.wantPkg || ver != tt.wantVer || eco != tt.wantEco {

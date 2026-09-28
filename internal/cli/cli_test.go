@@ -522,7 +522,7 @@ func TestRunCheck_JSON(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.21"})
 	})
 
 	// Should be valid JSON
@@ -534,6 +534,44 @@ func TestRunCheck_JSON(t *testing.T) {
 	// Vulnerabilities array should exist
 	if result.Vulnerabilities == nil {
 		t.Error("Vulnerabilities is nil")
+	}
+}
+
+func TestPrintIssuesSummary_LowOnly(t *testing.T) {
+	output := captureOutput(func() {
+		printIssuesSummary(&types.IssueCounts{Low: 2, Unknown: 1})
+	})
+
+	if strings.Contains(output, "No issues found") {
+		t.Errorf("low/unknown-only summary claims no issues:\n%s", output)
+	}
+	for _, want := range []string{"Issues Found", "low", "unknown"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("summary missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRunCheck_TimingOptIn(t *testing.T) {
+	for _, showTiming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("time=%v", showTiming), func(t *testing.T) {
+			resetOutputJSON()
+			mock := &mockScanner{
+				checkResult: &types.CheckResult{
+					Ecosystem:       types.EcosystemNPM,
+					Vulnerabilities: []types.VulnerabilityInfo{},
+					Timing:          &types.CheckTiming{TotalMs: 5},
+				},
+			}
+
+			output := captureOutput(func() {
+				runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.21", ShowTiming: showTiming})
+			})
+
+			if got := strings.Contains(output, "Timing"); got != showTiming {
+				t.Errorf("Timing shown = %v, want %v\nOutput: %s", got, showTiming, output)
+			}
+		})
 	}
 }
 
@@ -552,7 +590,7 @@ func TestRunCheck_Styled(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.21"})
 	})
 
 	if *exitCode != 0 {
@@ -1141,7 +1179,7 @@ func TestCLI_CheckIntegration(t *testing.T) {
 
 	// Check a scoped package
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "@babel/core", "7.23.0")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "@babel/core", Version: "7.23.0"})
 	})
 
 	var result types.CheckResult
@@ -1593,7 +1631,7 @@ func TestRunCheck_Styled_WithVulnerabilities(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.15")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.15"})
 	})
 
 	if *exitCode != 2 {
@@ -1636,7 +1674,7 @@ func TestRunCheck_Styled_CleanPackage(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.21"})
 	})
 
 	if *exitCode != 0 {
@@ -2005,7 +2043,7 @@ func TestRunCheck_ExitCode0_NoFindings(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.21")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.21"})
 	})
 
 	if *exitCode != 0 {
@@ -2041,7 +2079,7 @@ func TestRunCheck_ExitCode2_WithVulnerabilities(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "lodash", "4.17.15")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "lodash", Version: "4.17.15"})
 	})
 
 	if *exitCode != 2 {
@@ -2072,7 +2110,7 @@ func TestRunCheck_ExitCode2_WithSupplyChainCompromise(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "malicious-pkg", "1.0.0")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "malicious-pkg", Version: "1.0.0"})
 	})
 
 	if *exitCode != 2 {
@@ -2109,7 +2147,7 @@ func TestRunCheck_ExitCode2_WithBothFindings(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		runCheck(mock, types.EcosystemNPM, "malicious-pkg", "1.0.0")
+		runCheck(mock, checkOptions{Ecosystem: types.EcosystemNPM, Package: "malicious-pkg", Version: "1.0.0"})
 	})
 
 	if *exitCode != 2 {

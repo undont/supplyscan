@@ -1,6 +1,14 @@
 name: Update Homebrew Tap
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
@@ -14,9 +22,9 @@ permissions:
 jobs:
   update-homebrew:
     runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Validate tag
         env:
           TAG: ${{ inputs.tag }}

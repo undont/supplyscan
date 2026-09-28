@@ -1,6 +1,6 @@
 # Usage: run from inside the .demo/ directory so the tape's relative paths
-# (PATH lookup for the supplyscan binary, `ls`, `cat package.json` /
-# `cat requirements.txt`) resolve.
+# (the ../supplyscan binary, `ls`, `cat package.json` / `cat requirements.txt`)
+# resolve.
 #
 #   cd .demo
 #   vhs demo.tape
@@ -21,9 +21,12 @@ Set Theme { "name": "Monokai", "background": "#272822", "foreground": "#f8f8f2",
 Set TypingSpeed 70ms
 Set PlaybackSpeed 1.0
 
-# Hidden setup: put the project binary on PATH and start with a clean prompt.
+# Hidden setup: route `supplyscan` to the project binary and start with a clean
+# prompt. a shell function wins over any installed copy, whatever PATH holds
 Hide
-Type "export PATH=`pwd`/..:$PATH && export PS1='%F{green}acme-dashboard%f %F{blue}$%f ' && clear"
+Type 'supplyscan() { "$PWD/../supplyscan" "$@"; }'
+Enter
+Type "export PS1='%F{green}acme-dashboard%f %F{blue}$%f ' && clear"
 Enter
 Show
 
@@ -42,11 +45,6 @@ Type "cat requirements.txt"
 Enter
 Sleep 2s
 
-# Confirm the IOC database is loaded and ready.
-Type "supplyscan status"
-Enter
-Sleep 4s
-
 # Run the full scan — supply-chain compromises + audit vulnerabilities —
 # across both the JS and Python manifests in this directory.
 Type "supplyscan ."
@@ -55,5 +53,10 @@ Sleep 8s
 
 # Drill into a single compromised package.
 Type "supplyscan check @ctrl/deluge 7.2.2"
+Enter
+Sleep 5s
+
+# Drill into another compromised package (pypi).
+Type "supplyscan check telnyx 4.87.2 -e pypi"
 Enter
 Sleep 5s

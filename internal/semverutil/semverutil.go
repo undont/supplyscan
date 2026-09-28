@@ -21,24 +21,3 @@ func Satisfies(version, constraint string) (matched, ok bool) {
 	}
 	return c.Check(v), true
 }
-
-// SameReleaseLine reports whether a and b share a major version, or a major and
-// minor version when the major is 0, matching the lines a caret range stays on.
-// ok is false when either is not a single parsable version
-func SameReleaseLine(a, b string) (same, ok bool) {
-	va, err := semver.NewVersion(a)
-	if err != nil {
-		return false, false
-	}
-	vb, err := semver.NewVersion(b)
-	if err != nil {
-		return false, false
-	}
-	if va.Major() != vb.Major() {
-		return false, true
-	}
-	if va.Major() == 0 {
-		return va.Minor() == vb.Minor(), true
-	}
-	return true, true
-}

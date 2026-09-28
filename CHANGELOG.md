@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Only warn about other compromised versions of a package when one is newer than the installed version and within its caret range; compromised versions older than what is installed no longer show a warning
+- Make `--no-dev` (and `include_dev: false` on `supplyscan_scan`) exclude dev-only packages from `bun.lock`; bun lockfiles previously reported every package as a production dependency
+- Show the ecosystem in `supplyscan check` output and in its JSON / MCP result (`ecosystem`)
+- Reject an unknown `--ecosystem` value (CLI) or `ecosystem` (MCP `supplyscan_check`) with an error instead of silently checking npm
+- Reject a package name that cannot exist in the checked ecosystem in `supplyscan check` and `supplyscan_check`, instead of reporting it clean
+- Hide timing in `supplyscan check` output unless `--time` is passed, matching `supplyscan scan`; `supplyscan_check` no longer returns timing
+- Count low, info and unknown severity vulnerabilities in the scan summary (`summary.issues` gains `low`, `info` and `unknown`); a scan finding only those no longer reports "No issues found"
+
+## [1.17.1](https://github.com/undont/supplyscan/compare/v1.17.0...v1.17.1)
+
 - Stop flagging every package in a previously targeted npm scope; a warning now appears only when other versions of the installed package are compromised on the same major line. Warning JSON now carries `compromised_versions` and `campaigns` in place of `namespace`, `campaign` and `campaign_when`
 
 ## [1.17.0](https://github.com/undont/supplyscan/compare/v1.16.0...v1.17.0)

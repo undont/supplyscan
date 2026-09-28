@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -55,13 +56,13 @@ func Run(scan scanner.Scanner, args []string) {
 	case ".", cmdScan:
 		dispatchScan(scan, args)
 	case cmdCheck:
-		pkg, version, ecosystem, ok := parseCheckArgs(args[1:])
-		if !ok {
-			printStyledError("check requires package and version arguments")
+		opts, err := parseCheckArgs(args[1:])
+		if err != nil {
+			printStyledError("%v", err)
 			exitFunc(1)
 			return
 		}
-		runCheck(scan, ecosystem, pkg, version)
+		runCheck(scan, opts)
 	case cmdRefresh:
 		force := len(args) > 1 && args[1] == "--force"
 		runRefresh(scan, force)
@@ -104,19 +105,18 @@ func printUsage() {
 	fmt.Println(headerStyle.Render("supplyscan") + " - JavaScript and Python supply-chain scanner")
 	fmt.Println()
 	fmt.Println(formatSection("Usage"))
-	fmt.Println("  supplyscan <command> [options]    Run CLI commands (default)")
-	fmt.Println("  supplyscan --mcp                  Run as MCP server")
+	fmt.Println("  supplyscan <command> [options]                   Run CLI commands (default)")
+	fmt.Println("  supplyscan --mcp                                 Run as MCP server")
 	fmt.Println()
 	fmt.Println(formatSection("Commands"))
-	fmt.Println("  status                            Show scanner version and database info")
-	fmt.Println("  scan [path] [--no-recursive] [--strict]")
-	fmt.Println("                                    Scan a project for vulnerabilities (default: . , recursive)")
-	fmt.Println("  check <package> <version>         Check a single package@version")
-	fmt.Println("    [--ecosystem npm|pypi]          Registry to check against (default: npm)")
-	fmt.Println("  refresh [--force]                 Update IOC database from upstream")
+	fmt.Println("  status                                           Show scanner version and database info")
+	fmt.Println("  scan [path] [--no-recursive] [--strict]          Scan a project for vulnerabilities (default: . , recursive)")
+	fmt.Println("  check <package> <version> [--ecosystem npm|pypi] Check a single package@version registry to check against (default: npm)")
+	fmt.Println("  refresh [--force]                                Update IOC database from upstream")
 	fmt.Println()
 	fmt.Println(formatSection("Flags"))
-	fmt.Println("  --json                            Output raw JSON (for scripting)")
+	fmt.Println("  --json                                           Output raw JSON (for scripting)")
+	fmt.Println("  --time                                           Show per-phase timing (scan, check)")
 	fmt.Println()
 	fmt.Println(formatSection("Exit codes"))
 	fmt.Println("  0 clean   1 error   2 findings   3 coverage gaps (--strict)")
@@ -130,12 +130,22 @@ type scanOptions struct {
 	ShowTiming bool
 }
 
+// checkOptions holds the parsed arguments of the check command.
+type checkOptions struct {
+	Package    string
+	Version    string
+	Ecosystem  string
+	ShowTiming bool
+}
+
 // parseCheckArgs extracts the package, version and ecosystem from check args.
 // The ecosystem comes from "--ecosystem <value>" / "--ecosystem=<value>" (or the
 // "-e" short form) and defaults to npm; the two positional args are package and
 // version.
-func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
-	ecosystem = types.EcosystemNPM
+func parseCheckArgs(args []string) (checkOptions, error) {
+	errUsage := errors.New("check requires package and version arguments")
+	var opts checkOptions
+	var raw string
 	var positional []string
 
 	for i := 0; i < len(args); i++ {
@@ -143,31 +153,28 @@ func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
 		switch {
 		case arg == ecosystemFlag || arg == "-e":
 			if i+1 >= len(args) {
-				return "", "", "", false
+				return checkOptions{}, errUsage
 			}
 			i++
-			ecosystem = normalizeCheckEcosystem(args[i])
+			raw = args[i]
 		case strings.HasPrefix(arg, ecosystemFlag+"="):
-			ecosystem = normalizeCheckEcosystem(strings.TrimPrefix(arg, ecosystemFlag+"="))
+			raw = strings.TrimPrefix(arg, ecosystemFlag+"=")
+		case arg == timingFlag:
+			opts.ShowTiming = true
 		default:
 			positional = append(positional, arg)
 		}
 	}
 
 	if len(positional) < 2 {
-		return "", "", "", false
+		return checkOptions{}, errUsage
 	}
-	return positional[0], positional[1], ecosystem, true
-}
-
-// normalizeCheckEcosystem maps user-facing ecosystem aliases onto internal ids.
-func normalizeCheckEcosystem(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "pypi", "python", "pip":
-		return types.EcosystemPyPI
-	default:
-		return types.EcosystemNPM
+	ecosystem, err := types.ParseEcosystem(raw)
+	if err != nil {
+		return checkOptions{}, err
 	}
+	opts.Package, opts.Version, opts.Ecosystem = positional[0], positional[1], ecosystem
+	return opts, nil
 }
 
 func parseScanFlags(args []string) scanOptions {
@@ -304,8 +311,6 @@ func runScan(scan scanner.Scanner, path string, opts scanOptions) {
 func printScanResult(result *types.ScanResult) {
 	fmt.Println(formatHeader("Scan Results"))
 	fmt.Println(formatDivider(50))
-	fmt.Println()
-
 	printScanSummary(result)
 	printIssuesSummary(&result.Summary.Issues)
 	printSupplyChainFindings(result.SupplyChain.Findings)
@@ -389,7 +394,7 @@ func printScanSummary(result *types.ScanResult) {
 }
 
 func printIssuesSummary(issues *types.IssueCounts) {
-	issueCount := issues.Critical + issues.High + issues.Moderate + issues.SupplyChain
+	issueCount := issues.Critical + issues.High + issues.Moderate + issues.Low + issues.Info + issues.Unknown + issues.SupplyChain
 	if issueCount == 0 {
 		fmt.Println(formatSuccess("No issues found"))
 		fmt.Println()
@@ -405,6 +410,15 @@ func printIssuesSummary(issues *types.IssueCounts) {
 	}
 	if issues.Moderate > 0 {
 		fmt.Printf("  %s %d\n", formatSeverity("moderate"), issues.Moderate)
+	}
+	if issues.Low > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("low"), issues.Low)
+	}
+	if issues.Info > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("info"), issues.Info)
+	}
+	if issues.Unknown > 0 {
+		fmt.Printf("  %s %d\n", formatSeverity("unknown"), issues.Unknown)
 	}
 	if issues.SupplyChain > 0 {
 		fmt.Printf("  %s %d\n", formatLabel("supply chain"), issues.SupplyChain)
@@ -530,18 +544,21 @@ func printLockfiles(lockfiles []types.LockfileInfo) {
 	}
 }
 
-func runCheck(scan scanner.Scanner, ecosystem, pkg, version string) {
-	result, err := scan.CheckPackage(ecosystem, pkg, version)
+func runCheck(scan scanner.Scanner, opts checkOptions) {
+	result, err := scan.CheckPackage(opts.Ecosystem, opts.Package, opts.Version)
 	if err != nil {
 		printStyledError("%v", err)
 		exitFunc(1)
 		return
 	}
+	if !opts.ShowTiming {
+		result.Timing = nil
+	}
 
 	if outputJSON {
 		printJSON(result)
 	} else {
-		printCheckResult(result, pkg, version)
+		printCheckResult(result, opts.Package, opts.Version)
 	}
 
 	// Exit with code 2 if vulnerabilities or supply chain issues found
@@ -555,6 +572,7 @@ func printCheckResult(result *types.CheckResult, pkg, version string) {
 	fmt.Println(formatHeader("Package Check"))
 	fmt.Println(formatDivider(40))
 	fmt.Printf("%s %s\n", formatLabel("Package"), formatPackageVersion(pkg, version))
+	fmt.Printf("%s %s\n", formatLabel("Ecosystem"), result.Ecosystem)
 	fmt.Println()
 
 	// Supply chain status

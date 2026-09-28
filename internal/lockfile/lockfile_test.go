@@ -363,6 +363,83 @@ func TestParseBun_NestedDependencyKeys(t *testing.T) {
 	}
 }
 
+func TestParseBun_DevDependencies(t *testing.T) {
+	content := `{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "acme",
+      "devDependencies": { "vitest": "^4.0.0", "debug": "2.6.9", "@acme/lib": "workspace:*" }
+    },
+    "packages/app": {
+      "name": "@acme/app",
+      "dependencies": { "react-dom": "^19.0.0", "debug": "^4.3.4" },
+      "devDependencies": { "typescript": "^5.0.0" }
+    },
+    "packages/lib": {
+      "name": "@acme/lib",
+      "dependencies": { "nanoid": "^3.3.0" }
+    }
+  },
+  "packages": {
+    "@acme/app": ["@acme/app@workspace:packages/app"],
+    "@acme/lib": ["@acme/lib@workspace:packages/lib"],
+    "@acme/app/debug": ["debug@4.3.4", "", { "dependencies": { "ms": "2.1.2" } }, "sha512-a"],
+    "debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, "sha512-b"],
+    "@acme/app/ms": ["ms@2.1.2", "", {}, "sha512-c"],
+    "ms": ["ms@2.0.0", "", {}, "sha512-d"],
+    "react-dom": ["react-dom@19.0.0", "", { "dependencies": { "scheduler": "^0.25.0" }, "peerDependencies": { "react": "^19.0.0" } }, "sha512-e"],
+    "react": ["react@19.0.0", "", {}, "sha512-f"],
+    "scheduler": ["scheduler@0.25.0", "", {}, "sha512-g"],
+    "vitest": ["vitest@4.0.0", "", { "dependencies": { "tinyspy": "^4.0.0", "scheduler": "^0.25.0" } }, "sha512-h"],
+    "vitest/tinyspy": ["tinyspy@4.0.0", "", {}, "sha512-i"],
+    "typescript": ["typescript@5.0.0", "", {}, "sha512-j"],
+    "nanoid": ["nanoid@3.3.0", "", {}, "sha512-k"],
+    "orphan": ["orphan@1.0.0", "", {}, "sha512-l"]
+  }
+}`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "bun.lock")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := DetectAndParse(path)
+	if err != nil {
+		t.Fatalf("DetectAndParse() error = %v", err)
+	}
+
+	got := make(map[string]bool)
+	for _, dep := range lf.Dependencies() {
+		got[dep.Name+"@"+dep.Version] = dep.Dev
+	}
+
+	want := map[string]bool{
+		"debug@4.3.4":      false, // workspace dependency, nested under the workspace name
+		"ms@2.1.2":         false, // resolved from "@acme/app/debug" up to "@acme/app/ms"
+		"debug@2.6.9":      true,  // root devDependency
+		"ms@2.0.0":         true,  // only reachable through debug@2.6.9
+		"react-dom@19.0.0": false,
+		"react@19.0.0":     false, // peer of a prod package
+		"scheduler@0.25.0": false, // reachable from both prod and dev
+		"vitest@4.0.0":     true,
+		"tinyspy@4.0.0":    true,  // nested under a dev package
+		"typescript@5.0.0": true,  // workspace devDependency
+		"nanoid@3.3.0":     false, // dependency of a workspace that is only a devDependency
+		"orphan@1.0.0":     false, // unreachable, so not treated as dev
+	}
+	for name, wantDev := range want {
+		dev, ok := got[name]
+		if !ok {
+			t.Errorf("missing dependency %q", name)
+			continue
+		}
+		if dev != wantDev {
+			t.Errorf("%s Dev = %v, want %v", name, dev, wantDev)
+		}
+	}
+}
+
 func TestDetectAndParse_Deno(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "deno", "deno.lock")
 	lf, err := DetectAndParse(path)

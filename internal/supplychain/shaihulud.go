@@ -173,15 +173,15 @@ func (d *Detector) checkPackageHistory(ecosystem, name, version string) *types.S
 	}
 }
 
-// anyReachable reports whether any compromised npm version is on the installed
-// version's release line. ranges and PyPI versions can't be compared, so they count
+// anyReachable reports whether a caret update from the installed npm version can
+// land on a compromised one. ranges and PyPI versions can't be compared, so they count
 func anyReachable(ecosystem string, compromised []string, installed string) bool {
 	if normalizeEcosystem(ecosystem) != types.EcosystemNPM {
 		return len(compromised) > 0
 	}
 	for _, v := range compromised {
-		same, ok := semverutil.SameReleaseLine(installed, strings.TrimSpace(v))
-		if same || !ok {
+		reachable, ok := semverutil.Satisfies(strings.TrimSpace(v), "^"+installed)
+		if reachable || !ok {
 			return true
 		}
 	}

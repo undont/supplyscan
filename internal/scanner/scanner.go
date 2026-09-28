@@ -220,6 +220,10 @@ func (s *defaultScanner) scanLockfile(path string, includeDev bool) lockfileResu
 // CheckPackage checks a single package for issues. ecosystem is "npm" (default
 // when empty) or "pypi".
 func (s *defaultScanner) CheckPackage(ecosystem, name, version string) (*types.CheckResult, error) {
+	if err := types.ValidatePackageName(ecosystem, name); err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 	timing := &types.CheckTiming{}
 
@@ -229,6 +233,7 @@ func (s *defaultScanner) CheckPackage(ecosystem, name, version string) (*types.C
 	timing.IOCLoadMs = time.Since(iocStart).Milliseconds()
 
 	result := &types.CheckResult{
+		Ecosystem: ecosystem,
 		SupplyChain: types.CheckSupplyChainResult{
 			Compromised: false,
 		},
@@ -347,6 +352,12 @@ func countIssues(result *types.ScanResult) types.IssueCounts {
 			counts.High++
 		case types.SeverityModerate:
 			counts.Moderate++
+		case types.SeverityLow:
+			counts.Low++
+		case types.SeverityInfo:
+			counts.Info++
+		default:
+			counts.Unknown++
 		}
 	}
 
