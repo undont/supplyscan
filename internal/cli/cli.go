@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -55,9 +56,9 @@ func Run(scan scanner.Scanner, args []string) {
 	case ".", cmdScan:
 		dispatchScan(scan, args)
 	case cmdCheck:
-		pkg, version, ecosystem, ok := parseCheckArgs(args[1:])
-		if !ok {
-			printStyledError("check requires package and version arguments")
+		pkg, version, ecosystem, err := parseCheckArgs(args[1:])
+		if err != nil {
+			printStyledError("%v", err)
 			exitFunc(1)
 			return
 		}
@@ -134,8 +135,9 @@ type scanOptions struct {
 // The ecosystem comes from "--ecosystem <value>" / "--ecosystem=<value>" (or the
 // "-e" short form) and defaults to npm; the two positional args are package and
 // version.
-func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
-	ecosystem = types.EcosystemNPM
+func parseCheckArgs(args []string) (pkg, version, ecosystem string, err error) {
+	errUsage := errors.New("check requires package and version arguments")
+	var raw string
 	var positional []string
 
 	for i := 0; i < len(args); i++ {
@@ -143,31 +145,25 @@ func parseCheckArgs(args []string) (pkg, version, ecosystem string, ok bool) {
 		switch {
 		case arg == ecosystemFlag || arg == "-e":
 			if i+1 >= len(args) {
-				return "", "", "", false
+				return "", "", "", errUsage
 			}
 			i++
-			ecosystem = normalizeCheckEcosystem(args[i])
+			raw = args[i]
 		case strings.HasPrefix(arg, ecosystemFlag+"="):
-			ecosystem = normalizeCheckEcosystem(strings.TrimPrefix(arg, ecosystemFlag+"="))
+			raw = strings.TrimPrefix(arg, ecosystemFlag+"=")
 		default:
 			positional = append(positional, arg)
 		}
 	}
 
 	if len(positional) < 2 {
-		return "", "", "", false
+		return "", "", "", errUsage
 	}
-	return positional[0], positional[1], ecosystem, true
-}
-
-// normalizeCheckEcosystem maps user-facing ecosystem aliases onto internal ids.
-func normalizeCheckEcosystem(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "pypi", "python", "pip":
-		return types.EcosystemPyPI
-	default:
-		return types.EcosystemNPM
+	ecosystem, err = types.ParseEcosystem(raw)
+	if err != nil {
+		return "", "", "", err
 	}
+	return positional[0], positional[1], ecosystem, nil
 }
 
 func parseScanFlags(args []string) scanOptions {
@@ -555,6 +551,7 @@ func printCheckResult(result *types.CheckResult, pkg, version string) {
 	fmt.Println(formatHeader("Package Check"))
 	fmt.Println(formatDivider(40))
 	fmt.Printf("%s %s\n", formatLabel("Package"), formatPackageVersion(pkg, version))
+	fmt.Printf("%s %s\n", formatLabel("Ecosystem"), result.Ecosystem)
 	fmt.Println()
 
 	// Supply chain status

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/undont/supplyscan/internal/scanner"
@@ -294,6 +295,24 @@ func TestHandleCheck_ValidPackage(t *testing.T) {
 	// lodash 4.17.21 is not a compromised package
 	if checkResult.SupplyChain.Compromised {
 		t.Error("Expected lodash@4.17.21 to not be compromised")
+	}
+}
+
+func TestHandleCheck_UnknownEcosystem(t *testing.T) {
+	mock := newDefaultMock()
+	setupMockScanner(mock)
+
+	_, _, err := handleCheck(context.Background(), nil, checkInput{
+		Package:   "django",
+		Version:   "2.2.0",
+		Ecosystem: "pypy",
+	})
+
+	if err == nil {
+		t.Fatal("handleCheck() expected error for unknown ecosystem")
+	}
+	if !strings.Contains(err.Error(), `"pypy"`) {
+		t.Errorf("Error message = %q, want it to name the ecosystem", err.Error())
 	}
 }
 

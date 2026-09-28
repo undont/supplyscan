@@ -4,6 +4,8 @@
 
 - Only warn about other compromised versions of a package when one is newer than the installed version and within its caret range; compromised versions older than what is installed no longer show a warning
 - Make `--no-dev` (and `include_dev: false` on `supplyscan_scan`) exclude dev-only packages from `bun.lock`; bun lockfiles previously reported every package as a production dependency
+- Show the ecosystem in `supplyscan check` output and in its JSON / MCP result (`ecosystem`)
+- Reject an unknown `--ecosystem` value (CLI) or `ecosystem` (MCP `supplyscan_check`) with an error instead of silently checking npm
 
 ## [1.17.1](https://github.com/undont/supplyscan/compare/v1.17.0...v1.17.1)
 

@@ -229,6 +229,7 @@ func (s *defaultScanner) CheckPackage(ecosystem, name, version string) (*types.C
 	timing.IOCLoadMs = time.Since(iocStart).Milliseconds()
 
 	result := &types.CheckResult{
+		Ecosystem: ecosystem,
 		SupplyChain: types.CheckSupplyChainResult{
 			Compromised: false,
 		},

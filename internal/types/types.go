@@ -2,6 +2,7 @@
 package types
 
 import (
+	"fmt"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -25,6 +26,19 @@ const (
 	EcosystemNPM  = "npm"
 	EcosystemPyPI = "pypi"
 )
+
+// ParseEcosystem maps a user-supplied ecosystem onto an internal id. empty means
+// npm; anything unrecognised is an error rather than a silent npm check
+func ParseEcosystem(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", EcosystemNPM:
+		return EcosystemNPM, nil
+	case EcosystemPyPI, "python", "pip":
+		return EcosystemPyPI, nil
+	default:
+		return "", fmt.Errorf("unknown ecosystem %q (want npm or pypi)", s)
+	}
+}
 
 // pypiNameSep matches runs of the characters PEP 503 treats as equivalent.
 var pypiNameSep = regexp.MustCompile(`[-_.]+`)
@@ -259,6 +273,7 @@ type IOCDatabaseStatus struct {
 
 // CheckResult is the output of checking a single package.
 type CheckResult struct {
+	Ecosystem       string                 `json:"ecosystem"`
 	SupplyChain     CheckSupplyChainResult `json:"supply_chain"`
 	Vulnerabilities []VulnerabilityInfo    `json:"vulnerabilities"`
 	// AuditError is set when the vuln-audit backend failed, so an unreachable API
