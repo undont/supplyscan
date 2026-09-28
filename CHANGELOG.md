@@ -2,12 +2,21 @@
 
 ## [Unreleased]
 
+- Stop flagging every package in a previously targeted npm scope; a warning now appears only when other versions of the installed package are compromised on the same major line. Warning JSON now carries `compromised_versions` and `campaigns` in place of `namespace`, `campaign` and `campaign_when`
+
+## [1.17.0](https://github.com/undont/supplyscan/compare/v1.16.0...v1.17.0)
+
+- Add a `--time` flag to `supplyscan scan` to show per-phase scan timing, hidden by default
+
+## [1.16.0](https://github.com/undont/supplyscan/compare/v1.15.0...v1.16.0)
+
 - Scan recursively by default: `supplyscan scan <path>` now finds and audits every lockfile in the tree, so pointing at a monorepo root covers all sub-packages with no flag. Use `--no-recursive` (alias `--shallow`) to scan only the top level. The `supplyscan_scan` MCP tool now defaults `recursive` to `true`
 - Remove the CLI `--recursive` / `-r` flag (recursion is now the default; pass `--no-recursive` for the old top-level-only behaviour)
 - Add workspace-aware coverage: sub-package lockfiles across a monorepo are discovered and reported per workspace
 - Report coverage gaps when something can't be audited (unpinned `requirements.txt` entries, a manifest with no lockfile). Gaps are informational by default; `--strict` turns them into a distinct exit code `3`, and a real finding (exit `2`) always takes precedence
 - Match npm IOC entries expressed as version ranges (e.g. `< 1.2.3`, `>= 1.0.0, < 2.0.0`) via semver. PyPI continues to match exact pins, enumerated version lists, and all-versions wildcards only (PEP 440 range support is a documented fast-follow)
 - Widen the DataDog TeamPCP and GitHub Advisory IOC sources to ingest PyPI (`pip`) rows alongside npm
+- Report when a vulnerability audit backend (npm or OSV.dev) can't be reached, so a failed audit no longer reads as a clean scan
 
 ## [1.15.0](https://github.com/undont/supplyscan/compare/v1.14.0...v1.15.0)
 
