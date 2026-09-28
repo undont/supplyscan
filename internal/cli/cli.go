@@ -56,13 +56,13 @@ func Run(scan scanner.Scanner, args []string) {
 	case ".", cmdScan:
 		dispatchScan(scan, args)
 	case cmdCheck:
-		pkg, version, ecosystem, err := parseCheckArgs(args[1:])
+		opts, err := parseCheckArgs(args[1:])
 		if err != nil {
 			printStyledError("%v", err)
 			exitFunc(1)
 			return
 		}
-		runCheck(scan, ecosystem, pkg, version)
+		runCheck(scan, opts)
 	case cmdRefresh:
 		force := len(args) > 1 && args[1] == "--force"
 		runRefresh(scan, force)
@@ -116,6 +116,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println(formatSection("Flags"))
 	fmt.Println("  --json                                           Output raw JSON (for scripting)")
+	fmt.Println("  --time                                           Show per-phase timing (scan, check)")
 	fmt.Println()
 	fmt.Println(formatSection("Exit codes"))
 	fmt.Println("  0 clean   1 error   2 findings   3 coverage gaps (--strict)")
@@ -129,12 +130,21 @@ type scanOptions struct {
 	ShowTiming bool
 }
 
+// checkOptions holds the parsed arguments of the check command.
+type checkOptions struct {
+	Package    string
+	Version    string
+	Ecosystem  string
+	ShowTiming bool
+}
+
 // parseCheckArgs extracts the package, version and ecosystem from check args.
 // The ecosystem comes from "--ecosystem <value>" / "--ecosystem=<value>" (or the
 // "-e" short form) and defaults to npm; the two positional args are package and
 // version.
-func parseCheckArgs(args []string) (pkg, version, ecosystem string, err error) {
+func parseCheckArgs(args []string) (checkOptions, error) {
 	errUsage := errors.New("check requires package and version arguments")
+	var opts checkOptions
 	var raw string
 	var positional []string
 
@@ -143,25 +153,28 @@ func parseCheckArgs(args []string) (pkg, version, ecosystem string, err error) {
 		switch {
 		case arg == ecosystemFlag || arg == "-e":
 			if i+1 >= len(args) {
-				return "", "", "", errUsage
+				return checkOptions{}, errUsage
 			}
 			i++
 			raw = args[i]
 		case strings.HasPrefix(arg, ecosystemFlag+"="):
 			raw = strings.TrimPrefix(arg, ecosystemFlag+"=")
+		case arg == timingFlag:
+			opts.ShowTiming = true
 		default:
 			positional = append(positional, arg)
 		}
 	}
 
 	if len(positional) < 2 {
-		return "", "", "", errUsage
+		return checkOptions{}, errUsage
 	}
-	ecosystem, err = types.ParseEcosystem(raw)
+	ecosystem, err := types.ParseEcosystem(raw)
 	if err != nil {
-		return "", "", "", err
+		return checkOptions{}, err
 	}
-	return positional[0], positional[1], ecosystem, nil
+	opts.Package, opts.Version, opts.Ecosystem = positional[0], positional[1], ecosystem
+	return opts, nil
 }
 
 func parseScanFlags(args []string) scanOptions {
@@ -524,18 +537,21 @@ func printLockfiles(lockfiles []types.LockfileInfo) {
 	}
 }
 
-func runCheck(scan scanner.Scanner, ecosystem, pkg, version string) {
-	result, err := scan.CheckPackage(ecosystem, pkg, version)
+func runCheck(scan scanner.Scanner, opts checkOptions) {
+	result, err := scan.CheckPackage(opts.Ecosystem, opts.Package, opts.Version)
 	if err != nil {
 		printStyledError("%v", err)
 		exitFunc(1)
 		return
 	}
+	if !opts.ShowTiming {
+		result.Timing = nil
+	}
 
 	if outputJSON {
 		printJSON(result)
 	} else {
-		printCheckResult(result, pkg, version)
+		printCheckResult(result, opts.Package, opts.Version)
 	}
 
 	// Exit with code 2 if vulnerabilities or supply chain issues found

@@ -23,13 +23,15 @@ func TestParseCheckArgs(t *testing.T) {
 		{"explicit npm", []string{"lodash", "4.17.21", "-e", "npm"}, "lodash", "4.17.21", types.EcosystemNPM, true},
 		{"unknown ecosystem", []string{"x", "1.0.0", "--ecosystem", "rubygems"}, "", "", "", false},
 		{"misspelt ecosystem", []string{"django", "2.2.0", "-e", "pypy"}, "", "", "", false},
+		{"time flag is not positional", []string{"lodash", "--time", "4.17.21"}, "lodash", "4.17.21", types.EcosystemNPM, true},
 		{"missing version", []string{"lodash"}, "", "", "", false},
 		{"dangling ecosystem flag", []string{"lodash", "1.0.0", "--ecosystem"}, "", "", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pkg, ver, eco, err := parseCheckArgs(tt.args)
+			opts, err := parseCheckArgs(tt.args)
+			pkg, ver, eco := opts.Package, opts.Version, opts.Ecosystem
 			if ok := err == nil; ok != tt.wantOk {
 				t.Fatalf("err = %v, want ok %v", err, tt.wantOk)
 			}

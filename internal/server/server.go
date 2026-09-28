@@ -179,6 +179,7 @@ func handleCheck(_ context.Context, _ *mcp.CallToolRequest, input checkInput) (*
 		return nil, checkOutput{}, err
 	}
 
+	result.Timing = nil // timing is CLI-only (--time), as for scan
 	output := checkOutput{CheckResult: *result}
 
 	// Return FindingsError if vulnerabilities or supply chain compromises were found
