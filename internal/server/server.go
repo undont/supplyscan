@@ -19,8 +19,8 @@ import (
 // but find vulnerabilities or supply chain compromises. It wraps the result
 // with finding information so MCP clients can differentiate findings from errors.
 type FindingsError struct {
-	Result interface{} `json:"result"`
-	Code   string      `json:"code"`
+	Result any    `json:"result"`
+	Code   string `json:"code"`
 }
 
 func (e *FindingsError) Error() string {

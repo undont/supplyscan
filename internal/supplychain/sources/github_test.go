@@ -437,7 +437,7 @@ func TestGitHubAdvisorySource_Fetch_Pagination(t *testing.T) {
 		case "":
 			// First page - must return gitHubPageSize (100) advisories to trigger pagination
 			advisories = make([]gitHubAdvisory, 100)
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				advisories[i] = gitHubAdvisory{
 					GHSAID:   "GHSA-page1-" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
 					Severity: "critical",

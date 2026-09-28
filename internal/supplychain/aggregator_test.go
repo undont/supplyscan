@@ -555,11 +555,9 @@ func TestAggregator_DeduplicatesBackgroundRefresh(t *testing.T) {
 	// Fire 10 concurrent ensureLoaded calls — should only trigger 1 background refresh
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = agg.ensureLoaded(ctx)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -604,11 +602,9 @@ func TestAggregator_ConcurrentColdStart(t *testing.T) {
 	// Fire 5 concurrent cold-start calls — only 1 should actually fetch
 	var wg sync.WaitGroup
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = agg.ensureLoaded(ctx)
-		}()
+		})
 	}
 	wg.Wait()
 

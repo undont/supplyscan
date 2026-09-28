@@ -47,3 +47,29 @@ func TestSatisfies(t *testing.T) {
 		})
 	}
 }
+
+func TestSameReleaseLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     string
+		wantSame bool
+		wantOK   bool
+	}{
+		{"same major", "1.6.0", "1.14.1", true, true},
+		{"different major", "18.2.0", "35.0.0", false, true},
+		{"next major", "3.0.0", "4.0.3", false, true},
+		{"zero major same minor", "0.3.1", "0.3.9", true, true},
+		{"zero major different minor", "0.3.1", "0.30.4", false, true},
+		{"range is not a version", "1.6.0", "< 1.2.3", false, false},
+		{"unparsable version", "linked", "1.0.0", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			same, ok := SameReleaseLine(tt.a, tt.b)
+			if same != tt.wantSame || ok != tt.wantOK {
+				t.Errorf("SameReleaseLine(%q, %q) = (%v, %v), want (%v, %v)", tt.a, tt.b, same, ok, tt.wantSame, tt.wantOK)
+			}
+		})
+	}
+}

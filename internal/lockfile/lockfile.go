@@ -190,9 +190,14 @@ type CoverageReporter interface {
 }
 
 var (
-	jsManifestNames = map[string]struct{}{"package.json": {}}
+	jsManifestNames = map[string]struct{}{
+		"package.json": {},
+	}
 	pyManifestNames = map[string]struct{}{
-		"pyproject.toml": {}, "setup.py": {}, "setup.cfg": {}, "Pipfile": {},
+		"pyproject.toml": {},
+		"setup.py":       {},
+		"setup.cfg":      {},
+		"Pipfile":        {},
 	}
 )
 

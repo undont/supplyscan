@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"path"
 	"slices"
@@ -126,9 +127,7 @@ func (s *OSVSource) Fetch(ctx context.Context, client *http.Client) (*types.Sour
 			return nil, fmt.Errorf("failed to process OSV %s zip: %w", e.ecosystem, err)
 		}
 
-		for k, v := range eco {
-			packages[k] = v
-		}
+		maps.Copy(packages, eco)
 		fetched++
 	}
 

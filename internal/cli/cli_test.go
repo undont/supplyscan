@@ -1419,7 +1419,6 @@ func TestPrintScanResult_SupplyChainFindings(t *testing.T) {
 func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 	resetOutputJSON()
 
-	// Two packages from the same scope so we can verify grouping.
 	result := &types.ScanResult{
 		Summary: types.ScanSummary{
 			LockfilesScanned:  1,
@@ -1428,20 +1427,12 @@ func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 		SupplyChain: types.SupplyChainResult{
 			Warnings: []types.SupplyChainWarning{
 				{
-					Package:          "@tanstack/react-query",
-					InstalledVersion: "5.95.2",
-					Namespace:        "@tanstack",
-					Campaign:         "TeamPCP / Mini Shai-Hulud",
-					CampaignWhen:     "Apr–May 2026",
-					Note:             "Your installed version is not on any IOC list.",
-				},
-				{
-					Package:          "@tanstack/query-core",
-					InstalledVersion: "5.95.2",
-					Namespace:        "@tanstack",
-					Campaign:         "TeamPCP / Mini Shai-Hulud",
-					CampaignWhen:     "Apr–May 2026",
-					Note:             "Your installed version is not on any IOC list.",
+					Type:                "other_versions_compromised",
+					Package:             "@tanstack/react-query",
+					InstalledVersion:    "5.95.2",
+					CompromisedVersions: []string{"5.96.0", "5.96.1"},
+					Campaigns:           []string{"teampcp"},
+					Note:                "Your installed version is not on any IOC list.",
 				},
 			},
 		},
@@ -1451,31 +1442,16 @@ func TestPrintScanResult_SupplyChainWarnings(t *testing.T) {
 		printScanResult(result)
 	})
 
-	// New section header makes clear these are informational, not findings.
-	if !strings.Contains(output, "Heads up") {
-		t.Errorf("Expected 'Heads up' section header, got: %s", output)
-	}
-	// Reassurance must be visible so users don't panic.
-	if !strings.Contains(output, "not on any IOC list") {
-		t.Error("Expected reassurance that installed versions are not on any IOC list")
-	}
-	// Group header by scope, with campaign context.
-	if !strings.Contains(output, "@tanstack") {
-		t.Error("Expected scope '@tanstack' as group header")
-	}
-	if !strings.Contains(output, "TeamPCP") {
-		t.Error("Expected campaign name in group header")
-	}
-	// Both packages should appear under the single group.
-	if !strings.Contains(output, "@tanstack/react-query@5.95.2") {
-		t.Error("Expected react-query@version in package list")
-	}
-	if !strings.Contains(output, "@tanstack/query-core@5.95.2") {
-		t.Error("Expected query-core@version in package list")
-	}
-	// Old alarming "Warnings" header should be gone.
-	if strings.Contains(output, "\nWarnings\n") {
-		t.Error("Old 'Warnings' section header should have been replaced")
+	for _, want := range []string{
+		"Heads up",
+		"not on any IOC list",
+		"@tanstack/react-query@5.95.2",
+		"5.96.0, 5.96.1",
+		"teampcp",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Expected %q in output, got: %s", want, output)
+		}
 	}
 }
 
