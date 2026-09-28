@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Only warn about other compromised versions of a package when one is newer than the installed version and within its caret range; compromised versions older than what is installed no longer show a warning
+
+## [1.17.1](https://github.com/undont/supplyscan/compare/v1.17.0...v1.17.1)
+
 - Stop flagging every package in a previously targeted npm scope; a warning now appears only when other versions of the installed package are compromised on the same major line. Warning JSON now carries `compromised_versions` and `campaigns` in place of `namespace`, `campaign` and `campaign_when`
 
 ## [1.17.0](https://github.com/undont/supplyscan/compare/v1.16.0...v1.17.0)

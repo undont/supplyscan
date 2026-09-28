@@ -240,10 +240,11 @@ func TestDetector_CheckPackageHistory(t *testing.T) {
 		version string
 		want    bool
 	}{
-		{"same major compromised", "malicious-pkg", "1.9.0", true},
-		{"scoped, same major compromised", "@ctrl/tinycolor", "3.4.0", true},
+		{"newer version on caret line compromised", "@ctrl/tinycolor", "3.4.0", true},
+		{"only older versions on caret line compromised", "malicious-pkg", "1.9.0", false},
 		{"only other majors compromised", "@evil/package", "1.5.0", false},
 		{"zero major, different minor", "malicious-pkg", "0.9.0", false},
+		{"unparsable installed version", "malicious-pkg", "github:acme/malicious-pkg", true},
 		{"same scope, never compromised", "@ctrl/unknown-pkg", "1.0.0", false},
 		{"not in database", "lodash", "4.17.21", false},
 	}
@@ -275,7 +276,8 @@ func TestDetector_CheckDependencies(t *testing.T) {
 
 	deps := []types.Dependency{
 		{Name: "malicious-pkg", Version: "1.0.0"},   // Compromised
-		{Name: "malicious-pkg", Version: "1.9.0"},   // Safe version of compromised pkg
+		{Name: "malicious-pkg", Version: "1.9.0"},   // Only older versions compromised
+		{Name: "@ctrl/tinycolor", Version: "3.4.0"}, // Newer version compromised
 		{Name: "@ctrl/safe-pkg", Version: "1.0.0"},  // Same scope, never compromised
 		{Name: "@ctrl/tinycolor", Version: "3.4.1"}, // Compromised (no warning, just finding)
 		{Name: "lodash", Version: "4.17.21"},        // Safe
@@ -289,9 +291,12 @@ func TestDetector_CheckDependencies(t *testing.T) {
 		t.Errorf("Expected 2 findings, got %d", len(findings))
 	}
 
-	// Should have 1 warning: malicious-pkg@1.9.0 (same major compromised)
+	// Should have 1 warning: @ctrl/tinycolor@3.4.0 (3.4.1 is on its caret line)
 	if len(warnings) != 1 {
-		t.Errorf("Expected 1 warning, got %d", len(warnings))
+		t.Fatalf("Expected 1 warning, got %d", len(warnings))
+	}
+	if warnings[0].Package != "@ctrl/tinycolor" || warnings[0].InstalledVersion != "3.4.0" {
+		t.Errorf("Warning = %s@%s, want @ctrl/tinycolor@3.4.0", warnings[0].Package, warnings[0].InstalledVersion)
 	}
 
 	// Verify finding packages
@@ -310,11 +315,6 @@ func TestDetector_CheckDependencies(t *testing.T) {
 	}
 	if !foundCtrl {
 		t.Error("Expected finding for @ctrl/tinycolor@3.4.1")
-	}
-
-	// Verify warning
-	if len(warnings) > 0 && warnings[0].Package != "malicious-pkg" {
-		t.Errorf("Warning package = %q, want malicious-pkg", warnings[0].Package)
 	}
 }
 
